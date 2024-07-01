@@ -1,0 +1,39 @@
+\documentclass{book}
+
+% Archivos auxiliares:
+\input{others/packages}
+\input{others/config}
+\input{others/shortcuts}
+
+% Archivo de bibliografía:
+\addbibresource{others/references.bib}
+
+\begin{document}
+
+% Primeras páginas:
+\frontmatter
+\include{others/titlepage_temp}
+% \include{others/titlepage}
+% \include{others/abstract}
+% \include{others/dedication}
+
+\begingroup
+\hypersetup{hidelinks}
+\setcounter{tocdepth}{2} % mover a config.
+\tableofcontents
+\listoffigures
+\endgroup
+
+\mainmatter
+\addcontentsline{toc}{chapter}{Introducción}
+\include{others/introduction}
+
+% Capítulos:
+\include{chapters/dm}
+\include{chapters/ot}
+\include{chapters/eot_sbp}
+
+% Bibliografía:
+\addcontentsline{toc}{chapter}{Bibliografía}\printbibliography
+
+\end{document}
