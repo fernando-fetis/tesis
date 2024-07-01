@@ -1,0 +1,77 @@
+% Operadores:
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\essinf}{ess\,inf}
+
+% Insertar imagen:
+\newcommand{\insertimage}[3]{
+    \begin{figure}
+        \centering
+        \includegraphics[width=#2\textwidth]{./images/#1}
+        \caption{#3}
+        \label{fig:#1}
+    \end{figure}
+}
+
+% Ecuaciones (revisar no utilizados):
+\newcommand{\parent}[1]{\left(#1\right)}
+\newcommand{\rparent}[1]{\left[#1\right]}
+\newcommand{\feasible}[2]{\genfrac {}{}{0pt}{2}{#1}{#2}}
+\newcommand{\lspace}[2]{\operatorname{L}^{#1}\parent{#2}}
+\newcommand{\borel}[1]{\mathcal{B}\parent{#1}}
+\newcommand{\TV}[1]{\norm{#1}_{\operatorname{TV}}}
+\newcommand{\bernoulli}[1]{\operatorname{Bernoulli}\parent{#1}}
+\newcommand{\E}[2]{\mathbb{E}_{#1}\rparent{#2}}
+\newcommand{\var}[1]{\operatorname{Var}\parent{#1}}
+\newcommand{\cov}[2]{\operatorname{Cov}\parent{#1,\,#2}}
+\newcommand{\ley}[1]{\operatorname{Ley}\parent{#1}}
+\newcommand{\KL}[2]{\operatorname{D_{KL}}\parent{#1\,\|\,#2}}
+\newcommand{\fdiv}[2]{\operatorname{D}_f\parent{#1\,\|\,#2}}
+\newcommand{\tv}[2]{\operatorname{D_{TV}}\parent{#1\,\|\,#2}}
+\newcommand{\DF}[2]{\operatorname{D_F}\parent{#1\,\|\,#2}}
+\newcommand{\entropy}[1]{\mathcal{H}\parent{#1}}
+\newcommand{\elbo}{\operatorname{ELBO}}
+\newcommand{\cte}{\operatorname{constante}}
+\newcommand{\trace}[1]{\operatorname{Tr}\parent{#1}}
+\newcommand{\supp}[1]{\operatorname{Supp}\parent{#1}}
+\newcommand{\score}[2]{\nabla_{#1} \log #2}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\matrixspace}[2]{\mathcal{M}_{#1}\parent{#2}}
+\newcommand{\dotproduct}[2]{\left\langle #1,\,#2\right\rangle}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\weak}{\rightharpoonup}
+\newcommand{\gaussian}[2]{\mathcal{N}\parent{#1,\,#2}}
+\newcommand{\gaussianexpl}[3]{\mathcal{N}\parent{#1;\,#2,\,#3}}
+\newcommand{\identity}[1]{\operatorname{I}_{#1}}
+\newcommand{\1}{\mathds{1}}
+\newcommand{\diag}[1]{\operatorname{diag}\parent{#1}}
+\newcommand{\hessian}[1]{\operatorname{D}^2 #1}
+\newcommand{\continuous}[1]{\mathcal{C}\parent{#1}}
+\newcommand{\continuousb}[1]{\mathcal{C}_b\parent{#1}}
+\newcommand{\posmeasure}[1]{\mathcal{M}_+\parent{#1}}
+\newcommand{\discretemeasure}[1]{\mathcal{M}_+^d\parent{#1}}
+\newcommand{\probmeasure}[1]{\mathcal{M}_+^1\parent{#1}}
+\newcommand{\probmeasurep}[1]{\mathcal{M}_+^{1,p}\parent{#1}}
+\newcommand{\xspace}{\mathcal{X}}
+\newcommand{\yspace}{\mathcal{Y}}
+\newcommand{\salgebra}{\mathcal{S}}
+\newcommand{\simplex}[1]{\Sigma_{#1}}
+\newcommand{\wasserstein}[2]{\mathcal{W}_{#1}\parent{#2}}
+\newcommand{\pendiente}[1]{\colorbox{yellow}{#1}} % temporal.
+\newcommand{\monge}[1]{\operatorname{Monge}\parent{#1}}
+\newcommand{\kantorovich}[1]{\operatorname{Kantorovich}\parent{#1}}
+\newcommand{\dual}[1]{\operatorname{J}\parent{#1}}
+\newcommand{\kantoroviche}[1]{\operatorname{Kantorovich}_\epsilon\parent{#1}}
+\newcommand{\gibbs}{\mathcal{K}}
+\newcommand{\C}{\mathcal{C}}
+\newcommand{\power}[1]{\mathcal{P}\parent{#1}}
+\newcommand{\ptrue}{p_{\operatorname{true}}}
+\newcommand{\pprior}{p_{\operatorname{prior}}}
+\renewcommand{\P}{\mathbb{P}}
+\renewcommand{\d}{\,\operatorname{d}\!}
+
+
+
+
+
