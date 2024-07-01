@@ -1,0 +1,1496 @@
+\chapter{Introducción al transporte óptimo}
+\label{ot}
+
+En este capítulo se revisarán algunos conceptos y resultados fundamentales del transporte óptimo, un campo esencial dentro de la ingeniería y la matemática aplicada. Desde un punto de vista práctico, la forma de los problemas de optimización que busca resolver el transporte óptimo pueden ser adaptadas a una infinidad de contextos diferentes, permitiendo utilizar resultados importantes de la teoría en la toma de decisiones estratégicas y eficaces en escenarios complejos. Por otra parte, desde un punto de vista teórico, el transporte óptimo es un área bien estudiada desde la matemática, permitiendo, por ejemplo, obtener una distancia conveniente entre dos medidas de probabilidad.
+
+Para poder conectar el transporte óptimo con los modelos de difusión y ver las ventajas que esto implica, se comenzará estudiando el transporte óptimo de forma general, sin limitar su aplicación a los modelos generativos. Posteriormente, en la \autoref{ot/dynamic/dm} se conectarán directamente ambos tópicos y se verá que los modelos de difusión, en el mejor de los casos, corresponden a un caso particular del transporte óptimo.
+
+Para construir los problemas de transporte óptimo de una forma más natural, primero serán motivados en su versión discreta y luego generalizados a su versión continua en $\R^d$. Por otra parte, en la formulación continua de los problemas ya no se asumirá que las medidas de probabilidad poseen una función de densidad con respecto a la medida de Lebesgue ya que, al menos en este capítulo, esta suposición solo limita el alcance del los problemas de transporte óptimo y no aporta significativamente a la simplificación de la teoría.
+
+Con el fin de introducir el problema de transporte óptimo, se propone considerar dos conjuntos finitos $\xspace=\{x_i\}_{i=1}^n$ e $\yspace=\{y_j\}_{j=1}^m$, por ahora con $n=m$, donde el objetivo es encontrar una biyección $T:\xspace\to\yspace$ que minimice algún funcional de costo, el cual suele ser una suma de costos individuales de emparejamiento\footnote{Notar que este problema es equivalente al problema de buscar un matching óptimo en un grafo bipartito cuyas particiones son $\xspace$ e $\yspace$.}. Con esta idea, dado $c:\xspace\times\yspace\to\R$, donde $c(x_i,y_j)$ indica el costo de emparejar $x_i$ con $y_j$, el problema de optimización se plantea de la siguiente forma:
+
+\begin{equation}
+	\label{eq:ot_motivation}
+	\min_{\feasible{T:\xspace\to\yspace}{T\text{es biyección}}}
+	\sum_{i=1}^n c\left(x_i,T(x_i)\right)
+\end{equation}
+
+Notar que que el conjunto de biyecciones es finito y no vacío cuando $n=m$, por lo que este problema siempre tiene solución, las cuales pueden identificarse con permutaciones de $\{1,\ldots,n\}$. Por otra parte, es importante notar que el funcional de costo discreto $c:\xspace\times\yspace\to\R$ siempre se puede identificar con una matriz $C\in\matrixspace{n,m}{\R}$ mediante $C_{ij}=c(x_i,y_j)$.
+
+Para ilustrar este problema en el área del aprendizaje automático, se puede considerar el problema asignar particiones de datos de entrenamiento a diferentes GPUs para realizar un entrenamiento distribuido. En este escenario, $\xspace$ representa el conjunto de particiones de datos, mientras que $\yspace$ representa el conjunto de GPUs disponibles para el entrenamiento. Para la función de costo se podría considerar buscar una asignación que minimice el tiempo total de entrenamiento para cada par partición-GPU, $(x,T(x))\in\xspace\times\yspace$, que asigne el mapa $T$.
+
+Si bien esta formulación es lo suficientemente general como para ser utilizada en diferentes problemas, también tiene múltiples desventajas. La primera de ellas es que al ser un problema de optimización discreto, debe ser tratado como un problema combinatorial, siendo difícil de resolver para valores muy grandes de $n=m$ ya que el conjunto factible tiene $n!$ elementos. Además, esta formulación no tiene solución en casos donde $\xspace$ e $\yspace$ tienen distinto cardinal (ya que no es posible construir una biyección) y no permite asociar varios elementos de $\xspace$ a un mismo elemento de $\yspace$, lo cual es útil, por ejemplo, si las GPUs tienen suficiente memoria en el problema de entrenamiento distribudio.
+
+Para resolver estas limitaciones, en la \autoref{ot/monge} se relajará la formulación anterior permitiendo asignar varios elementos de $\xspace$ a un mismo elemento de $\yspace$, obteniendo versión más general del problema \eqref{eq:ot_motivation} conocida como \textit{problema de Monge}. Posteriormente, en la \autoref{ot/kantorovich} se mostrarán algunas dificultades de este nuevo enfoque, por lo que se modificará el problema de Monge para obtener la \textit{relajación de Kantorovich}, la cual es otro problema de optimización que tiene buenas propiedades tanto teóricas como prácticas y que, bajo ciertas condiciones, es equivalente al problema de Monge. Posteriormente, en la \autoref{ot/dynamic} se incluirá la variable temporal en estos problemas para dar una interpretación dinámica del problema de transporte óptimo, la cual en particular será comparada con los modelos de difusión en \autoref{ot/dynamic/dm} y luego generalizada a una versión estocástica en el \autoref{eot_sbp}, donde habrá una equivalencia con el problema del puente de Schrödinger.
+
+Antes de comenzar con el estudio del transporte óptimo, es necesario definir algunos conceptos básicos de teoría de la medida, los cuales serán usados hasta el final del trabajo. Este requisito es fundamental ya que un modelo de difusión es fundamentalmente un problema de transporte entre medidas de probabilidad.
+
+\section{Conceptos de teoría de la medida}
+\label{ot/measure_theory}
+
+La teoría de la medida es una rama del análisis matemático que permite tener un marco teórico robusto para el estudio de las probabilidades, el cual muchas veces se vuelve necesario al trabajar con variables aleatorias continuas. En esta sección se entregará la intuición de algunos resultados necesarios para este trabajo, sin entrar en detalles técnicos como la construcción de la integral de Lebesgue o la medibilidad de las funciones, lo que extendería considerablemente la sección y desviaría el foco del trabajo. En consecuencia, muchos de los resultados entregados no son del todo riguroso pero sí son suficientes para el desarrollo de la teoría del transporte óptimo.
+
+En la teoría de la medida se definen de forma precisa dos conjuntos los cuales se suelen ver como un único conjunto en la interpretación clásica de las probabilidades. Estos conjuntos corresponden al conjunto muestral $\xspace$ y el espacio de eventos $\salgebra$. Usando como ejemplo el experimento de lanzar dos monedas, el espacio muestral corresponde a todos los posibles resultados del experimento, es decir $\xspace=\{(C,C),(C,S),(S,C),(S,S)\}$, mientras que el espacio de eventos corresponde a diferentes subconjuntos del espacio muestral $\xspace$ que puedan ser de interés para calcularles una probabilidad. Por ejemplo, un evento $A$ podría ser que la primera moneda sea $C$ (i.e., $A=\{(C,C),(C,S)\}\subset\power{\xspace}$\footnote{Para un conjunto arbitrario $\xspace$, el conjunto potencia (también llamado conjunto de las partes) corresponde al conjunto de todos los subconjuntos posibles de $\xspace$: $\power{\xspace}:=\{A:\,A\subset\xspace\}$. En particular, $\xspace\in\power{\xspace}$ y $\emptyset\in\power{\xspace}$.}) mientras que otro evento $B$ puede ser que ambas monedas sean $S$ (i.e., $B=\{(S,S)\}\subset\power{\xspace}$). De este modo, para este caso particular, los posibles eventos de este experimento son las diferentes combinaciones de resultados en $\xspace$ que se pueden obtener:
+
+\begin{align*}
+  \salgebra = \{&\\
+    &\{\},\\
+    &\{(C,C)\},\, \{(C,S)\},\, \{(S,C)\},\, \{(S, S)\},\\
+    &\{(C,C), (C,S)\},\, \{(C,C), (S,C)\},\, \{(C,C), (S,S)\},\, \{(C,S), (S,C)\},\, \{(C,S), (S,S)\},\, \{(S,C), (S,S)\},\\
+    &\{(C,C), (C,S), (S,C)\},\, \{(C,C), (C,S), (S,S)\},\, \{(C,C), (S,C), (S,S)\},\, \{(C,S), (S,C), (S,S)\},\\
+    &\{(C,C),(C,S),(S,C),(S,S)\}\\
+    \}&
+\end{align*}
+
+Notar que, el espacio muestral completo $\xspace$ también es por si solo un evento, al igual que su complemento $\{\}$ (evento vacío). Es lógico esperar que para alguna noción de probabilidad, la probabilidad del evento $\xspace\in\salgebra$ sea $1$, mientras que la probabilidad del evento vacío $\emptyset\in\salgebra$ se espera que sea 0. Además, en este espacio de eventos $\salgebra$ hay otros eventos que también tiene sentido asignarles probabilidad 0 como por ejemplo el evento $\{(C,C), (S,S)\}$. En teoría de la medida, al conjunto de eventos $\salgebra$ se le denomina $\sigma$-álgebra y es sobre los elementos de este conjunto donde define una noción de probabilidad, lo cual es más razonable que asignarle probabilidades a los elementos del espacio muestral $\xspace$ directamente. Por otra parte, la noción de probabilidad que se asigna sobre los elementos de $\salgebra$ debe ser consistente con lo que uno esperaría de la interpretación clásica de las probabilidades. En particular, la probabilidad del evento formado por dos eventos disjuntos (i.e., cuya intersección es vacía) debe ser la suma de la probabilidad de los eventos individuales.
+
+Con las observaciones anteriores es natural construir las siguientes definiciones:
+
+\begin{defn}[$\sigma$-álgebra]
+
+  Dado un conjunto $\xspace$ no necesariamente finito, otro conjunto $\salgebra\subset\power{\xspace}$ se dirá $\sigma$-álgebra (en $\xspace$) si:
+
+  \begin{itemize}
+    \item $\xspace\in\salgebra$.
+    \item Si $A\in\salgebra$ entonces $A^c := \{w\in\xspace :\, w\not\in A\}\in\salgebra$.
+    \item Si $(A_n)_{n\in\N}\subset\salgebra$ entonces $\bigcup\limits_{n\in\N} A_n \in\salgebra$.
+  \end{itemize}
+
+  Por último, a los elementos $A\in\salgebra$ se les denomina \textit{conjuntos medibles} y al par $(\xspace,\salgebra)$ se le denomina \textit{espacio medible}.
+
+\end{defn}
+
+En el marco probabilístico, la primera condición indica que el espacio muestral $\xspace$ es un evento por si solo. La segunda condición exige que para todo evento, el evento complementario (que se puede entender como la negación del evento original) también es efectivamente un evento. Por otra parte, la última condición indica que unir una cantidad numerable de eventos es también un evento.
+
+\subsection{Definición de medida}
+\label{ot/measure_theory/measure_definition}
+
+Para asignar una probabilidad a los eventos de una $\sigma$-álgebra se utiliza la noción de medida, la cual se extiende más allá del marco probabilístico:
+
+\begin{defn}[medida]
+	\label{defn:measure}
+
+  Dado un espacio medible $(\xspace,\salgebra)$, una medida sobre este espacio es una función $\mu:\salgebra\to\R\cup{\infty}$ que además cumple los axiomas de Kolmogorov:
+
+  \begin{itemize}
+    \item Positividad: $\mu(A)\geq 0$\footnote{Si bien es posible trabajar con valores negativos (medidas con signo), en este trabajo se asumirá siempre la positividad.} para todo conjunto medible $A\in\salgebra$.
+    \item Anulación en el vacío: $\mu(\emptyset) = 0$.
+    \item $\sigma$-aditividad: si $(A_n)_{n\in\N}\subset\salgebra$ es una familia de conjuntos medibles disjuntos de a pares\footnote{Es decir, $A_i\cap A_j = \emptyset,\,\forall i\neq j$.}, entonces:
+
+      \begin{equation}
+        \mu\parent{\bigcup_{n\in\N} A_n} = \sum_{n\in\N} \mu(A_n)
+      \end{equation}
+
+  \end{itemize}
+
+  A la tupla $(\xspace,\salgebra,\mu)$ se le denomina \textit{espacio de medida}. Si $\mu(\xspace)=1$ se dice que $\mu$ es una \textit{medida de probabilidad} y $(\xspace,\salgebra,\mu)$ se denomina \textit{espacio de probabilidad}.
+
+\end{defn}
+
+A lo largo de este trabajo, $\mathcal{M}_+(\xspace)$ representará el conjunto de medidas definidas sobre el espacio medible $(\xspace,\salgebra)$. Del mismo modo, $\probmeasure{\xspace}\subset\mathcal{M}_+(\xspace)$ representará el conjunto de medidas de probabilidad definidas en $(\xspace,\salgebra)$. Por otra parte, este capítulo está enfocado en formular la teoría únicamente para medidas de probabilidad ya que este es un marco de trabajo lo suficientemente general y está en línea con lo realizado en el \autoref{dm}. Debido a esto, al hablar de medidas siempre se estará haciendo referencia a medidas (positivas) de probabilidad. Sin embargo, la mayor parte de los resultados se puede extender sin mayores cambios al conjunto de medidas positivas $\mathcal{M}_+(\xspace)$ e incluso al conjunto de medidas con signo. Por último, es importante tener en cuenta que dada una medida positiva finita $\mu\in\posmeasure{\xspace}$ (i.e., $\mu(\xspace)=M<\infty$), siempre es posible construir una medida de probabilidad mediante normalización (i.e., $\mu_{\operatorname{probabilidad}} = \frac{1}{M}\mu$).
+
+\subsubsection{Medidas en espacios discretos}
+
+Si el conjunto muestral $\xspace$ es finito, entonces se dirá que se está trabajando sobre un \textit{espacio discreto}. En este caso, es usual considerar la $\sigma$-álgebra de las partes, por lo que el espacio medible en el caso discreto es $\parent{\xspace,\power{\xspace}}$. Por lo tanto, si $\xspace=\{x_1,\ldots,x_n\}$, las medidas (discretas) de probabilidad sobre este espacio son siempre de la forma 
+
+\begin{equation}
+	\label{eq:discrete_measure_defn}
+	\mu=\sum_{i=1}^n \lambda_i \,\delta_{x_i}
+\end{equation}
+
+donde $\delta_{x_i}$ es un delta de Dirac\footnote{Es decir, $\delta_{x_i}(A)$ vale 1 si $x_i\in A$ y 0 si no.} y $\lambda_i\geq 0$ indica la probabilidad (también llamada \textit{masa}) que la medida $\mu$ le entrega al elemento $\xspace_i\in\xspace$. Dado que $\mu$ debe ser medida de probabilidad, necesariamente $\sum_{i=1}^n \lambda_i = 1$. Al vector $\lambda\in\R_+^n$ se le denomina \textit{vector de probabilidad asociado a $\mu$} y determina totalmente la medida $\mu\in\probmeasure{\xspace}$.
+
+El conjunto de todos los vectores de probabilidad se denomina \textit{simplex de probabilidad} y cada vector de este conjunto determina de manera biunívoca una medida de probabilidad en el espacio medible discreto mediante \eqref{eq:discrete_measure_defn}:
+
+\begin{equation}
+	\Sigma_n := \left\{\lambda\in\R^n_+\,:\norm{\lambda}_1=\sum_{i=1}^n \lambda_i = 1 \right\}
+\end{equation}
+
+\subsubsection{Medidas en espacios continuos}
+
+De acuerdo a la \autoref{defn:measure}, una medida $\mu$ no es necesariamente finita, lo que permite extender la teoría a otros tópicos no relacionados directamente con la teoría de probabilidades. Por ejemplo, en el plano $\R^2$ se puede definir, naturalmente, la medida de Lebesgue, la cual asigna a cada figura en el plano su respectiva área. Esta medida no es finita (se pueden hacer figuras tan grandes como se quiera) ni tiene interpretación probabilística.
+
+Para poder definir la medida estándar en $\xspace=\R^d$ es necesario primero indicar cuál es la $\sigma$-álgebra adecuada en este espacio. Si bien en el caso discreto es usual considerar la $\sigma$-álgebra de las partes (donde todos los subconjuntos de $\xspace$ son conjuntos medibles), en el caso continuo esto genera ciertos problemas patológicos que sugieren definir una $\sigma$-álgebra más apropiada. La $\sigma$-álgebra usual en estos casos, denotada por $\borel{\R^d}$, es la menor $\sigma$-álgebra que contiene todos los conjuntos abiertos de $\R^d$ y se denomina \textit{$\sigma$-álgebra de los borelianos de $\R^d$}. Si bien $\borel{\R^d}\subsetneq\power{\R^d}$, esta $\sigma$-álgebra es lo suficientemente grande y general como para contener todos los subconjuntos de $\R^d$ considerados en la práctica. Más aún, encontrar un subconjunto de $\R^d$ que no pertenezca a $\borel{\R^d}$ (i.e., que no sea medible), es un problema no trivial.
+
+Con respecto a la medida que se considera en el escenario continuo, para el caso $d=1$ es usual definir, bajo la $\sigma$-álgebra $\borel{\R}$, la medida $\mu\in\posmeasure{\R}$ definida en cada intervalo $(a,b]\in\borel{\R}$ como su largo (i.e., $\mu((a,b])=b-a$\footnote{El teorema de Hahn-Carathéodory garantiza que es suficiente definir una medida en intervalos de este tipo para poder extenderla de forma única a todos los elementos de $\borel{\R}$.}). Esta medida es conocida como medida de Lebesgue y se considera la medida por defecto en $\R$. De forma equivalente, se puede construir la medida de Lebesgue en $\R^d$ (bajo la $\sigma$-álgebra $\borel{\R^d}$), donde la medida de un conjunto medible $A\in\borel{\R^d}$ es precisamente su volumen en el espacio.
+
+\subsubsection{Medidas en espacios más generales}
+
+La teoría del transporte óptimo y del puente de Schrödinger en el \autoref{eot_sbp} se puede extender sin mayores cambios a espacios más generales que el caso discreto y continuo. Por lo tanto, por completitud, se entregarán las definiciones precisas para estos casos.
+
+Un espacio topológico $(\xspace,\tau)$ se dirá \textit{separable} si posee un subconjunto denso numerable. Si existe una métrica $d:\xspace\times\xspace\to\R_+$ tal que su topología inducida es igual a $\tau$, el espacio topológico se dirá \textit{metrizable}. Si $d$ además es una distancia completa (en el sentido de Cauchy), $(\xspace,\tau)$ se dirá \textit{completamente metrizable}. Con esto, un \textit{espacio polaco} es un espacio topológico completamente metrizable y separable.
+
+Al trabajar un espacio topológico $(\xspace,\tau)$ como un espacio medible, siempre se considerará, implícitamente, la $\sigma$-álgebra de sus \textit{borelianos}, $\borel{\xspace}$, la cual se define como la menor $\sigma$-álgebra que contiene a $\tau$. Así, una medida sobre esta $\sigma$-álgebra se denominará \textit{medida de Borel}.
+
+En transporte óptimo y en teoría de probabilidades en general, es usual enunciar los teoremas asumiendo que los espacios involucrados son al menos espacios polacos ya que este tipo de espacios es lo suficientemente general como para cubrir un amplio espectro de problemas, y evita algunos casos patológicos encontrados en formulaciones más generales. En particular, tanto el caso discreto $\xspace=\{x_1,\ldots,x_n\}$ como el caso continuo $\xspace=\R^d$ son espacios polacos.
+
+\subsection{Existencia de funciones de densidad}
+\label{ot/measure_theory/density}
+
+Cuando se consideran variables aleatorias con valores en $\R^d$ (como las estudiadas en el \autoref{dm}), estas inducen naturalmente una medida de probabilidad en $\R^d$, donde la masa que asigna dicha medida a cada conjunto medible $A\in\borel{\R^d}$ corresponde a la probabilidad de que la variable aleatoria tome ese valor. Por ejemplo, dada una variable aleatoria gaussiana $z\sim\gaussian{0}{1}$, la medida que esta induce sobre $\R$ viene dada por:
+
+\begin{equation}
+	\label{eq:density_example}
+	\mu_z(A) = \int_A p_z(x) \d x
+\end{equation}
+
+donde $A\in\borel{\R^d}$ es un conjunto medible de $\R$ (por ejemplo, un intervalo) y $p_z$ es la función de densidad de una variable aleatoria gaussiana estándar. En este caso, se dice que la medida $\mu_z\in\probmeasure{\R}$ es \textit{absolutamente continua} con respecto a la medida de Lebesgue$\d x$ ya que existe una función de densidad $p_z$ que permite escribir $\mu_z$ como una integral con respecto a la medida de Lebesgue.
+
+Sin embargo, esto no es siempre posible. Por ejemplo, si la variable aleatoria $z$ concentrase toda su masa en un único punto $x_0\in\R$, no sería posible encontrar una función $p_z:\R\to\R$ para obtener la igualdad dada en \eqref{eq:density_example} debido a que la integral de Riemman (vinculada a la medida de Lebesgue) no es capaz de asignarle masa a puntos individuales ya que, la medida de Lebesgue del intervalo formado por un único punto tiene medida cero (debido a que tiene longitud cero).
+
+Este problema de la no existencia de una función de densidad se tendrá siempre que la medida a la que se le busca densidad le asigne masa a elementos demasiado pequeños con respecto a la medida con la que se está comparando. Esta observación motiva la siguiente definición:
+
+\begin{defn}[continuidad absoluta de medidas]
+    \label{defn:absolute_continuity_measures}
+    Dado un espacio medible $(\xspace,\salgebra)$ y dos medidas de probabilidad $\mu,\nu\in\probmeasure{\xspace}$, se dirá que $\mu$ es absolutamente continua (a.c.) con respecto a $\nu$ si
+
+    \begin{equation}
+        \mu(A) = 0 \implies \nu(A)=0,\quad \forall A\in\salgebra
+    \end{equation}
+
+    Esta propiedad se denotará como $\mu\ll\nu$.
+\end{defn}
+
+En los ejemplos anteriores, la medida asociada a la variable aleatoria gaussiana es absolutamente continua con respecto a la medida de Lebesgue, mientras que la medida que concentra toda su masa en un punto no lo es.
+
+El siguiente resultado indica que si $\mu\ll\nu$, entonces $\mu$ posee una función de densidad con respecto a $\nu$:
+
+\begin{teo}[Radon-Nikodym]
+    \label{teo:radon_nikodym}
+    Sea $(\xspace,\salgebra)$ un espacio medible y $\mu,\nu\in\probmeasure{\xspace}$ dos medidas de probabilidad con $\mu\ll\nu$. Entonces, existe una función $f:\xspace\to\R_+$ denominada \textit{función de densidad}, tal que:
+
+    \begin{equation}
+        \mu(A) = \int_\xspace f \d\nu, \quad\forall A\in\salgebra
+    \end{equation}
+
+    La función $f$ es única y es denominada \textit{derivada de Radon-Nikodym de $\mu$ con respecto a $\nu$}, por lo que se suele denotar como $\frac{\d\mu}{\d\nu}$.
+\end{teo}
+
+\subsection{Medida push-forward}
+\label{ot/measure_theory/push_forward}
+
+Para concluir esta sección, se revisará el concepto de \textit{medida push-forward}, el cual consiste en traspasar la medida desde un espacio de probabilidad a un espacio medible cualquiera mediante una función entre ambos espacios. Esta definición será crucial al momento de definir el problema de Monge en la próxima sección.
+
+\begin{defn}[Medida push-forward]
+	\label{defn:push_forward}
+	Sea $T:\xspace\to\yspace$ una función entre el espacio de probabilidad $(\xspace,\salgebra_\xspace,\mu)$ y el espacio medible $(\yspace,\salgebra_\yspace)$. La medida push-forward $T_\#\mu\in\probmeasure{\yspace}$ que induce $\mu$ sobre $\yspace$ mediante $T$ se define como:
+
+	\begin{equation}
+		T_\#\mu(B):= (T_\#\mu)(B) = \mu\parent{T^{-1}(B)}
+		= \mu\parent{\{x\in\xspace\,:\, T(x)\in B\}},
+		\quad \forall B\in \salgebra_\yspace
+	\end{equation}
+\end{defn}
+
+Es decir, la función $T:\xspace\to\yspace$ construye una medida en el espacio de llegada a partir de la medida en el espacio de origen mediante preimágenes.
+Notar que si $T:\xspace\to\yspace$ es inyectiva, la definición anterior es equivale a que $\mu(A) = \nu(T(A)),\,\forall A\in\salgebra_\xspace$.
+
+Se tiene la siguiente caracterización para saber si una medida es efectivamente la medida push-forward:
+
+\begin{prop}
+	\label{prop:push_forward_characterization}
+	Sea $T:\xspace\to\yspace$ una función entre el espacio de probabilidad $(\xspace,\salgebra_\xspace,\mu)$ y el espacio medible $(\yspace,\salgebra_\yspace)$. Entonces, $\nu\in\probmeasure{\yspace}$ es la medida push-forward inducida por $\mu$ mediante $T$ si y solo si
+
+	\begin{equation}
+		\int_\yspace h(y)\d\nu = \int_\xspace h(T(x))\d\mu,
+		\quad\forall h\in\mathcal{C}(\yspace)
+	\end{equation}
+
+	donde $\mathcal{C}(\yspace)$ representa el conjunto de funciones $h:\yspace\to\R$ continuas en $\yspace$.
+\end{prop}
+
+Una forma de interpretar la medida push-forward es notando que el mapa $T:\xspace\to\yspace$ es una función que traslada puntos entre dos espacios de medida, mientras que $T_\#:\posmeasure{\xspace}\to\posmeasure{\yspace}$ es una extensión de $T$ que traslada medidas en $\xspace$ a medidas en $\yspace$.
+
+Se tienen las siguientes propiedades de las medidas push-forward:
+
+\begin{prop}
+	Sean $\xspace$ e $\yspace$ espacios medibles y $\mu\in\probmeasure{\xspace}$. Las siguientes afirmaciones son ciertas:
+
+	\begin{itemize}
+		\item El operador $T_\#:\probmeasure{\xspace}\to\probmeasure{\yspace}$ es lineal:
+		
+		\begin{equation}
+			T_\#(\mu_1+\mu_2)=T_\#\mu_1 + T_\#\mu_2
+		\end{equation}
+
+		donde $\mu_1,\mu_2\in\probmeasure{\xspace}$.
+
+		\item Fórmula de cambio de variable:
+
+		      \begin{equation}
+			      \int_\yspace f(y)\d\,(T_\#\mu)(y) = \int_\xspace f(T(x)) \d\mu(x)
+		      \end{equation}
+
+		\item Composición de mapas de transporte:
+
+		      \begin{equation}
+			      (S\circ T)_\#\mu = S_\#(T_\#\mu)
+		      \end{equation}
+	\end{itemize}
+\end{prop}
+
+La demostración de estas propiedades se puede encontrar en \cite{Thorpe2018}.
+
+\section{Problema de Monge}
+\label{ot/monge}
+
+Volviendo al problema de transporte que motivó este capítulo, \eqref{eq:ot_motivation}, si bien el problema de la infactibilidad para $n\neq m$ se puede solucionar eliminando la restricción de biyectividad para $T$\footnote{En particular, pidiendo solo sobreyectividad se soluciona la infactibilidad para $n>m$ mientras que pidiendo solo inyectividad se soluciona la infactibilidad para $n<m$.}, el problema sigue teniendo la limitación de tratar a todos los elementos por igual. En el problema de entrenamiento distribuido propuesto al comienzo, esto implica que el problema \eqref{eq:ot_motivation} no es consciente de atributos relevantes como el tamaño de la partición o la capacidad de la GPU.
+
+Para resolver limitaciones de este tipo, se modificará el marco de trabajo del problema anterior y se considerará adicionalmente que cada elemento $x_i\in\xspace$ tiene asignado un valor $a_i\in\R$ que podrá ser usado dentro de la función de costo. Similarmente, cada elemento $y_j\in\yspace$ tendrá asignado un valor $b_j\in\R$
+
+\subsection{Formulación del problema}
+\label{ot/monge/formulation}
+
+\subsubsection{Formulación discreta}
+
+Con el fin de mostrar otra perspectiva del transporte óptimo, se motivará el problema de Monge usando el problema de asignación de recursos. En este escenario, una empresa posee un conjunto $\xspace=\{x_i\}_{i=1}^n$ de yacimientos mineros, donde cada yacimiento $x_i\in\xspace$ produce una cantidad $a_i>0$ de cierta materia prima. Por otra parte, un conjunto de fábricas $\yspace=\{y_j\}_{j=1}^m$ espera recibir una cantidad $b_j>0$ en cada fábrica $y_j\in\yspace$, pudiendo abastecerse de diferentes yacimientos de $\xspace$\footnote{La restricción $a_i,b_j>0$ no limita la generalidad del problema ya que si algún $a_i$ (resp. $b_j$) fuese nulo, se podría eliminar de la familia el punto $x_i$ (resp. $y_j$) asociado.}. El problema de transporte óptimo aquí consiste en satisfacer la demanda de todas las empresas minimizando el costo de transportar la materia prima desde los yacimientos mineros hacia las fábricas. Notar que este nuevo problema elimina la restricción $n=m$.
+
+Bajo este marco, el problema de asignar los elementos de $\xspace$ entre los elementos de $\yspace$ minimizando un funcional de transporte $c:\xspace\times\yspace\to\R$ se formula de la siguiente forma:
+
+\begin{equation}
+	\label{eq:monge_no_measure}
+	\inf_{T:\xspace\to\yspace} \sum_{i=1}^n c\left(x_i,T(x_i)\right)
+	\quad\text{s.a}\quad
+	\sum_{i\,:\,T(x_i)=y_j} a_i = b_j ,\quad\forall j\in\{1,\ldots,m\}
+\end{equation}
+
+donde la restricción adicional busca que se cumpla la demanda para cada $y_j\in \yspace$. Notar que el mapa buscado $T$ ya no necesita ser biyectivo pero sí es necesariamente sobreyectivo ya que, de lo contrario, de acuerdo a la restricción, habría un $b_j=0$, lo cual contradice que $\{b_j\}_{j=1}^m\subset\R_{++}$. Por otra parte, al considerar $n=m$ y $a=b=\1$, se recupera la biyectividad de $T$ y la restricción se cumple trivialmente, concluyendo que \eqref{eq:ot_motivation} es un caso particular del problema \eqref{eq:monge_no_measure}.
+
+Por otra parte, la solución no tiene por qué existir ni ser única: la sobreyectividad de $T$ no se puede alcanzar cuando $n<m$, por lo que en este caso el problema es infactible y no hay solución. Sin embargo, se verá que para el caso $n=m$ sí existe solución cuando la cantidad ofertada total es igual a la cantidad demandada total. Por otra parte, en algunos casos es posible encontrar varias soluciones cuando el problema presenta algún tipo de simetría.
+
+Si bien la formulación del problema \eqref{eq:monge_no_measure} es bastante clara, es usual escribir el problema como un problema de transporte entre medidas de probabilidad\footnote{Si bien en el caso discreto no son evidentes las ventajas de esta formulación, sí se vuelve más natural al estudiar el problema de Kantorovich en la \autoref{ot/kantorovich}.}. Bajo este enfoque, los elementos de $\xspace$ se interpretarán como puntos en un espacio medible discreto, mientras que los vectores $a=(a_1,\ldots,a_n)$ y $b=(b_1,\ldots,b_m)$ representarán medidas discretas en dichos espacios.
+
+Para poder considerar únicamente medidas de probabilidad, se pedirá que los vectores $a\in\R^n$ y $b\in\R^m$ sean vectores de probabilidad\footnote{Esto no limita el alcance de la formulación ya que cualquier vector $v\in\R_+^d$ puede ser normalizado al simplex $\Sigma_d$.} (i.e., $a\in\Sigma_n$ y $n\in\Sigma_m$). Con esto, se construyen las medidas discretas $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$ definidas como:
+
+\begin{equation}
+	\label{eq:discrete_measures}
+	\mu = \sum_{i=1}^n a_i \delta_{x_i} \qquad
+	\nu = \sum_{j=1}^m b_i \delta_{y_i}
+\end{equation}
+
+Bajo esta interpretación, \eqref{eq:monge_no_measure} se entiende como el problema de buscar un mapa $T:\xspace\to\yspace$ que transporte de forma óptima la masa $\mu$ de los elementos de $\xspace$ hacia los elementos de $\yspace$ que demandan una masa $\nu$.
+
+Por otra parte, la restricción en \eqref{eq:monge_no_measure} se interpreta como una condición de preservación de medida después del transporte, donde toda la masa que es transportada hacia $y_j\in\yspace$ debe ser igual a la masa total de todos los elementos $x_i\in\xspace$ que fueron transportados hacia $y_j$. En el enfoque de teoría de la medida, esta restricción indica precisamente que $T_\#\mu=\nu$ (ver \autoref{defn:push_forward}), donde la medida push-forward $T_\#\mu\in\probmeasure{\yspace}$ toma la siguiente forma en el caso discreto:
+
+\begin{equation}
+	\label{eq:push_forward_discrete}
+	T_\#\mu := \sum_{i=1}^n a_i \delta_{T(x_i)}
+\end{equation}
+
+Observar que esta medida transfiere el vector de probabilidad asociado a $\mu$ en $\xspace$ a un vector de probabilidad en $\yspace$ de acuerdo a $T$. Con esta nueva notación se puede formular lo que se conoce como el problema de Monge:
+
+\begin{defn}[Problema de Monge, versión discreta]
+	Dados dos conjuntos discretos finitos $\xspace=\{x_i\}_{i=1}^n$ e $\yspace=\{y_j\}_{j=1}^m$, y dos medidas de probabilidad $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$ con vectores de probabilidad $a\in\Sigma_n$ y $b\in\Sigma_m$ respectivamente, el problema de Monge discreto para un funcional de costo $c:\xspace\times\yspace\to\R$ es:
+
+	\begin{equation}
+		\label{eq:monge_discrete}
+		\inf_{\feasible{T:\xspace\to\yspace}{T_\#\mu=\nu}}
+		\sum_{i=1}^n c(x_i,T(x_i))
+	\end{equation}
+
+	A una solución óptima $T^*$ del problema, en caso de existir, se le denomina \textit{mapa de Monge}.
+\end{defn}
+
+Como este problema es solo una reformulación del problema \eqref{eq:monge_no_measure}, la existencia de un mapa $T:\xspace\to\yspace$ que satisfaga $T_\#\mu = \nu$ no es segura y la solución del problema, en caso de existir, no tiene por qué ser única. Sin embargo, cuando $n=m$ y las medidas $\mu$ y $\nu$ son uniformes (i.e., $a=b=\frac{1}{n}\1$), se puede demostrar que el problema \eqref{eq:monge_discrete}, equivalente en este caso al problema de matching \eqref{eq:ot_motivation}, posee solución (ver \autoref{prop:matching_existence}).
+
+\subsubsection{Formulación continua}
+
+El problema de Monge discreto \eqref{eq:monge_no_measure} puede ser extendido a un problema de transporte continuo, donde se busca trasladar una cierta cantidad de masa no necesariamente puntual de un lugar a otro. Para motivar su formulación es usual considerar el problema de trasladar eficientemente un montículo de tierra con una forma y densidad específica hacia otro lugar con una forma y densidad no necesariamente igual a la original. Este problema se ilustra en la \autoref{fig:ot/earth_mover}.
+
+\insertimage{ot/earth_mover}{0.8}{Problema del transporte de tierra, donde el montículo rojo (con densidad de masa $\rho_1$) debe ser trasladado al montículo azul (con densidad de masa $\rho_2$). Para un mapa de transporte $T$, el volumen $A\subset\R^2$ es transportado hacia el volumen $T(A)=\{T(x):x\in A\}\subset\R^2$.}
+
+En este caso, el problema de transporte consiste en encontrar un mapa de transporte $T:\R^2\to\R^2$ que minimice un cierto costo de transporte (p.g. la distancia) pero que también respete la conservación de masa. Para esto último, es necesario, al igual que en el caso discreto, exigir que la masa de cada volumen de tierra $B\subset\R^2$ en el montículo de destino sea igual a la masa total que sale desde el montículo de origen hacia $B$. En consecuencia, si los montículos de origen y destino tienen densidades de masa $\rho_1,\rho_2:\R^2\to\R$ respectivamente, lo que se debe pedir al mapa de transporte $T$ es que cumpla
+
+\begin{equation}
+	\int_{B} \rho_2(y) \d y = \int_{T^{-1}(B)} \rho_1(x) \d x,
+	\quad\forall B\in\borel{\R^2}
+	\label{eq:push_forward_r2}
+\end{equation}
+
+donde $T^{-1}(B) = \{x\in\R^2 : T(x)\in B\}$ es el volumen de masa en el montículo de origen que son transportados hacia $B$. Notar que esta restricción es análoga a la restricción del problema discreto \eqref{eq:monge_no_measure}. Además, considerando las funciones de masa $m_1(A) := \int_A \rho_1(x)\d x$ y $m_2(B) := \int_B \rho_2(y)\d y$, se vuelve claro que la condición \eqref{eq:push_forward_r2} es una condición de preservación de masa:
+
+\begin{equation}
+	\label{eq:monge_earth_mass}
+	m_2(B) = m_1\parent{T^{-1}(B)},
+	\quad\forall B\in\borel{\R^2}
+\end{equation}
+
+Al igual que en la formulación discreta, es posible interpretar las funciones de masa $m_1$ y $m_2$ como medidas (ahora en $\R^2$) $\mu$ y $\nu$ respectivamente, donde además se observa que la existencia de las densidades $\rho_1$ y $\rho_2$ no es necesaria para la formulación. Bajo esta interpretación, la condición de conservación de masa en \eqref{eq:monge_earth_mass} se puede reescribir, al igual que en el caso discreto, como $T_\#\mu = \nu$, donde $T_\#\mu\in\probmeasure{\yspace}$ es la medida push-forward inducida por $\mu$ a través de $T$.
+
+Esto motiva a construir la siguiente definición, la cual también es válida en el caso discreto:
+
+\begin{defn}[mapa de transporte]
+	Un mapa $T:\xspace\to\yspace$ es un mapa de transporte entre una medida de probabilidad $\mu\in\probmeasure{\xspace}$ y otra $\nu\in\probmeasure{\yspace}$ si $T_\#\mu = \nu$.
+\end{defn}
+
+Notar que esta definición es equivalente en el caso discreto a \eqref{eq:push_forward_discrete}, donde el hecho de trabajar con medidas discretas permite escribir explícitamente la medida push-forward $T_\#\mu$. Con esta reinterpretación, el problema de Monge toma la siguiente forma en su versión continua:
+
+\begin{defn}[problema de Monge, versión continua]
+	Dados dos conjuntos $\xspace\subset\R^n$ e $\yspace\subset\R^m$, el problema de Monge entre dos medidas de probabilidad $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$ asociado a un funcional de costo integrable $c:\xspace\times\yspace\to\R$ es:
+
+	\begin{equation}
+		\label{eq:monge_continuous}
+		\inf_{\feasible{T:\xspace\to\yspace}{T_\#\mu=\nu}}
+		\int_{\xspace} c(x, T(x)) \d\mu(x)
+	\end{equation}
+
+	A una solución óptima $T^*$ del problema, en caso de existir, se le denomina \textit{mapa de Monge}.
+\end{defn}
+
+Si las medidas $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$ tienen funciones de densidad $p_\mu\in L^1(\xspace)$ y $p_\nu\in L^1(\yspace)$ respectivamente (con respecto a la medida de Lebesgue), el problema \eqref{eq:monge_continuous} se puede reescribir como:
+
+\begin{equation}
+	\inf_{\feasible{T:\xspace\to\yspace}{T_\#\mu=\nu}}
+	\int_{\xspace} c(x, T(x))\, p_\mu(x)\d x
+\end{equation}
+
+donde la restricción $T_\#\mu=\nu$ se puede escribir, de acuerdo a la \autoref{prop:push_forward_characterization}, como
+
+\begin{equation}
+	\int_\yspace h(y)\, p_\nu(y) \d y = \int_\xspace h(T(x))\, p_\mu(x) \d x,
+	\quad\forall h\in\mathcal{C}(\yspace)
+\end{equation}
+
+\section{Relajación de Kantorovich}
+\label{ot/kantorovich}
+
+Si bien el problema de Monge es más general que el problema inicial \eqref{eq:ot_motivation}, no tiene la propiedad de ser un problema de optimización convexo, por lo que no tiene buenas propiedades para su resolución. En efecto, en el caso continuo, cuando las medidas tienen densidad con respecto a la medida de Lebesgue se puede demostrar que la restricción $T_\#\mu=\nu$ es altamente no lineal:
+
+\begin{prop}[ecuación de Monge-Ampère]
+	Dadas dos medidas $\mu,\nu\in\probmeasure{\R^d}$ con funciones de densidad $p_\mu,p_\nu\in L^1(\R^d)$ respectivamente, la igualdad $T_\#\mu=\nu$ es equivalente a que se cumpla la ecuación de Monge-Ampère
+
+	\begin{equation}
+		p_\mu(x) = p_\nu(T(x))\left|\det\parent{\nabla_x T(x)}\right|
+	\end{equation}
+\end{prop}
+
+\begin{proof}
+	Por el teorema de Brenier enunciado en el \autoref{teo:brenier} se tiene que existe un mapa de Monge $T^*:\R^d\to\R^d$ de la forma $T^*(x)=\nabla \phi(x)$, donde $\phi:\R^d\to\R$ es una función convexa.
+
+	En particular, esta solución debe cumplir la conservación de masa mediante la restricción $T^*_\#\mu = \nu$, la cual corresponde a:
+
+	\begin{equation}
+		\mu((T^*)^{-1}(B)) = \int_{\R^d} \underbrace{\1_{(T^*)^{-1}(B)}(x)}_{\1_B(T(x))} \d\mu(x) = \int 1_B(y) \d \nu(y) = \nu(B)
+	\end{equation}
+
+	Notar que la igualdad intermedia es equivalente\footnote{Esto es gracias a la densidad de las funciones simples en $L^1$: al cumplirse la propiedad para funciones simples de la forma $f(y)=\1_B(y)$ se puede obtener la propiedad para funciones en $L^1$.} a pedirla para funciones $g\in L^1(\R^d,\nu)$ y no solo para $f(y)=\1_B(y)$:
+
+	\begin{equation}
+		\int_{\R^d} f(T(x)) \d\mu(x) = \int f(y) \d \nu(y)
+	\end{equation}
+
+	Por lo tanto, recordando que $\d\mu = p_\mu dx$ y $\d\nu = p_\nu dy$ y que $T=\nabla\phi$, la ecuación anterior es equivalente a:
+
+	\begin{equation}
+		\int_{\R^d} f(T(x)) p_\mu(x)\d x = \int f(y) p_\nu(y)\d y
+	\end{equation}
+
+	\pendiente{terminar.}
+\end{proof}
+
+En esta sección se relajará el problema de Monge pudiendo repartir la masa de los elementos de $\xspace$ a múltiples elementos de $\yspace$, lo cual se puede interpretar como una asignación probabilística para el problema de transporte óptimo. Este nuevo problema tendrá la propiedad de ser convexo y, más importante aún, definirá una métrica entre medidas de probabilidad.
+
+\subsection{Formulación primal}
+\label{ot/kantorovich/primal}
+
+\subsubsection{Problema discreto}
+
+En el escenario del transporte eficiente de materia prima en \eqref{eq:monge_no_measure} es posible considerar que un mismo yacimiento pueda enviar parte de su materia prima a distintas fábricas. Si bien esta es una hipótesis razonable, el problema de Monge discreto \eqref{eq:monge_discrete} no es capaz de incluirla en su formulación. Notar que esta relajación es análoga a la realizada en el problema de Monge donde, a diferencia del problema original \eqref{eq:ot_motivation}, se permitió que elementos de $\yspace$ estén enlazados a más de un elemento de $\xspace$.
+
+Sin embargo, permitir una asignación múltiple cambia considerablemente el problema de Monge discreto \eqref{eq:monge_discrete}: el mapa buscado $T:\xspace\to\yspace$ deja de ser una función, perdiendo todas las propiedades que eso implica. Es por este motivo que para formular este nuevo problema, ahora se buscará una matriz $P\in\matrixspace{n,m}{[0,1]}$ donde $P_{ij}$ indicará la cantidad de masa que se debe trasladar desde $x_i\in\xspace$ hacia $y_j\in\yspace$.
+
+Por otra parte, es necesario que la matriz de transporte $P$ respete la conservación de masa tanto en la medida de origen $\mu\in\probmeasure{\xspace}$ como en la de llegada $\nu\in\probmeasure{\yspace}$. En el problema de transporte desde yacimientos hacia fábricas, la $i$-ésima fila de la matriz $P$ representa como se reparte la materia prima de $x_i$, por lo que se debe imponer que la suma de dicha fila sea igual a $a_i$. Del mismo modo, la $j$-ésima columna de $P$ representa la cantidad de materia prima que llega a la fábrica $y_j$, por lo que la suma de dicha columna debe ser igual a $b_j$.
+
+Por último, para formular el problema de forma clara se aprovechará el hecho de que el funcional de costo $c:\xspace\times\yspace\to\R$ usado en el problema de Monge \eqref{eq:monge_discrete} se puede identificar con una matriz $C\in\matrixspace{n,m}{\R}$, donde $C_{ij}=c(x_i,x_j)$ indica el costo de transportar una unidad de masa desde $x_i\in\xspace$ hacia $y_j\in\yspace$. De esta forma, el costo total de transporte consistirá en el producto Frobenius entre la matriz de asignación de masa $P$ y la matriz de costo $C$:
+
+\begin{defn}[Problema de Kantorovich, caso discreto]
+	Dados dos conjuntos finitos $\xspace=\{x_i\}_{i=1}^n$ e $\yspace=\{y_j\}_{j=1}^m$ y dos medidas de probabilidad $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$ con vectores de probabilidad $a\in\Sigma_n$ y $b\in\Sigma_m$ respectivamente, el problema de Kantorovich discreto para un funcional de costo $c:\xspace\times\yspace\to\R$ es:
+
+	\begin{equation}
+		\label{eq:kantorovich_discrete}
+		\inf_{P\in \Pi_d(\mu,\nu)} \dotproduct{P}{C}_F = \sum_{i=1}^{n}\sum_{j=1}^{m} C_{ij}P_{ij}
+	\end{equation}
+
+	donde la región factible $\Pi_d(\mu,\nu)$ se define como:
+
+	\begin{equation}
+		\label{eq:coupling_discrete}
+		\Pi_d(\mu,\nu) := \left\{P\in\matrixspace{n,m}{[0,1]}\,:\,
+		\sum_{j=1}^m P_{ij} = a_i,\, \forall i\in\{1,\ldots,n\},\quad
+		\sum_{i=1}^n P_{ij} = b_j,\, \forall j\in\{1,\ldots,m\}
+		\right\}
+	\end{equation}
+
+	A una solución óptima $P^*$ se le denomina plan de Kantorovich.
+\end{defn}
+
+Notar que este conjunto es no vacío (por lo que el problema de optimización siempre es factible) ya que siempre se puede considerar la matriz $P\in\matrixspace{n,m}{[0,1]}$ definida como $P_{ij}=a_ib_j$, la cual pertenece a $\Pi_d(\mu,\nu)$ ya que $a\in\Sigma_n$ y $b\in\Sigma_m$:
+
+\begin{equation}
+	\sum_{j=1}^m P_{ij} = a_i\sum_{j=1}^m b_j = a_i,\, \forall i\in\{1,\ldots,n\},\quad
+	\sum_{i=1}^n P_{ij} = b_j\sum_{i=1}^n = b_j,\, \forall j\in\{1,\ldots,m\}
+\end{equation}
+
+Será útil ver que esta matriz se puede escribir vectorialmente como $P=ab^\top$. Por otra parte, la restricción de conservación de masa para $\mu$ se puede escribir vectorialmente como $P\1_{m}=a$, mientras que para $\nu$ se puede escribir como $P^\top \1_n = b$.
+
+Por otro lado, a diferencia de lo que ocurre en el problema de Monge, el conjunto factible es simétrico en el sentido que $P\in \Pi_d(\mu,\nu)$ si y solo si $P^\top \in \Pi_d(\nu,\mu)$. Sin embargo, este problema a gran escala puede ser costoso de resolver ya que es necesario encontrar $n\cdot m$ incógnitas, lo cual se podrá solucionar estudiando su formulación dual en la \autoref{ot/kantorovich/dual}, con lo que se logrará reducir significativamente la cantidad de incógnitas.
+
+Para el análisis de la existencia y unicidad de la solución, es útil notar que las $n+m$ restricciones de igualdad que definen $\Pi_d(\mu,\nu)$ son lineales y, en consecuencia, $\Pi_d(\mu,\nu)$ es un polítopo\footnote{En este trabajo se definirá un polítopo como un poliedro convexo y acotado (i.e., sin parte cónica en la descomposición de Minkowski-Weyl).} (ver \autoref{fig:ot/polytope}), por lo que \eqref{eq:kantorovich_discrete} es un problema de programación lineal estándar. En consecuencia, este problema siempre posee solución ya que, como se vio anteriormente, siempre es factible. Sin embargo, si bien el problema es un problema de optimización convexo, no es estrictamente convexo, por lo que no se podrá garantizar la unicidad de la solución. En el \autoref{eot_sbp} se regularizará este problema agregando un nuevo término a la función objetivo, transformando el problema en uno estrictamente convexo. Este nuevo problema resultará ser equivalente al problema del puente de Schrödinger en su versión estática.
+
+\insertimage{ot/polytope}{0.3}{Polítopo de couplings $\Pi_d(\mu,\nu)$ representado en el plano. El costo de transporte $\dotproduct{P}{C}_F$ aumenta al moverse en la dirección de tiene el vector de costo $C\in\matrixspace{n,m}{\R}$ (representado por el vector en negrita), por lo que para minimizar el costo de transporte se busca el coupling $P^*\in\Pi_d(\mu,\nu)$ que más pueda avanzar en el sentido contrario al vector de costo $C$ sin salirse del polítopo, lo cual se consigue en el vértice $P^*$. Notar que en este caso el minimizador del problema de transporte es único. En cambio, si el vector de costo $C$ tuvise la inclinación precisa para ser ortogonal a alguna de las facetas que define el polítopo, entonces podría haber infinitas soluciones. Imagen adaptada desde \cite{cuturi2023learning}.}
+
+Con respecto a la relación entre el valor óptimo del problema de Monge y del problema de Kantorovich, si bien ambos valores no coinciden en general, sí se puede afirmar que el valor óptimo para el problema de Kantorovich es una cota inferior del valor óptimo para el problema de Monge ya que, como se verá en la demostración, siempre se puede construir un plan de transporte $\pi_{T^*}\in\probmeasure{\xspace\times\yspace}$ a partir de un mapa de transporte óptimo $T^*:\xspace\to\yspace$.
+
+\begin{prop}
+	Se tiene la siguiente desigualdad cuando el problema de Monge es factible:
+
+	\begin{equation}
+		\inf_{P\in \Pi_d(\mu,\nu)} \dotproduct{P}{C}_F
+		\leq \inf_{\feasible{T:\xspace\to\yspace}{T_\#\mu=\nu}}
+		\sum_{i=1}^n c(x_i,T(x_i))
+	\end{equation}
+\end{prop}
+
+\begin{proof}
+	Dado un plan de Monge $T^*:\xspace\to\yspace$, se puede definir un plan de transporte $P^{T^*}\in\Pi_d(\mu,\nu)$ \textit{determinista} en el sentido que $x_i\in\xspace$ le entrega toda su masa a $T(x_i)\in\yspace$, sin realizar división de masa (ver \autoref{fig:ot/deterministic_plan}):
+
+	\insertimage{ot/deterministic_plan}{0.5}{Plan de transporte determinista a partir de un mapa de Monge $T^*:\xspace\to\yspace$ definido como $T^*(x_5)=T^*(x_6)=y_1,\,T^*(x_2)=y_2\,T^*(x_1)=T^*(x_4)=y_3,\,T^*(x_3)=y_4$. Notar que la medida producto $\pi^{T^*}\in\probmeasure{\xspace\times\yspace}$ asociada a este plan de transporte puede verse como la medida push-forward inducida por $\mu$ a través del mapa $x\in\xspace\mapsto (x,T(x))\in\xspace\times\yspace$. Esta observación será importante en la formulación continua al enunciar el \autoref{teo:brenier}.}
+
+	\begin{equation}
+		\label{eq:deterministic_plan}
+		P^{T^*}_{ij} =
+		\begin{cases}
+			a_i & \text{si } T^*(x_i) = y_j \\
+			0   & \text{si no}
+		\end{cases}
+	\end{equation}
+
+	Notar que este plan de transporte efectivamente está en $\Pi_d(\mu,\nu)$ ya que respeta las distribuciones marginales. Para ver esto, se usará la notación $j(i)$ para indicar el valor $j\in\{1,\ldots,m\}$ tal que $T(x_i)=y_j$ por lo que, en particular, $P^{T^*}_{i,j(i)} = a_i$. Luego:
+
+	\begin{align}
+		 & \sum_{j=1}^m P^{T^*}_{ij} = P^{T^*}_{i,j(i)} = a_i                                                           \\
+		 & \sum_{i=1}^n P^{T^*}_{ij} = \sum_{i\,:\,T^*(x_i)=y_j} P^{T^*}_{i,j(i)} = \sum_{i\,:\,T^*(x_i)=y_j} a_i = b_j
+	\end{align}
+
+	donde en la última igualdad se usó la condición de preservación de masa, $T_\#\mu = \nu$ (ver \eqref{eq:monge_no_measure}). Por otra parte, el costo de Kantorovich para este plan de transporte es igual al costo de Monge para $T^*$:
+
+	\begin{equation}
+		\sum_{i=1}^{n}\sum_{j=1}^{m} C_{ij}P^{T^*}_{ij}
+		= \sum_{i=1}^{n} C_{i,j(i)}P^{T^*}_{i,j(i)}
+		= \sum_{i=1}^{n} C_{i,j(i)} a_i
+		= \sum_{i=1}^{n} c(x_i, T^*(x_i))
+	\end{equation}
+
+	donde en la última igualdad se usó que la matriz de costo en el problema de Kantorovich corresponde al costo marginal obtenido a partir del funcional de costo para Monge.
+
+	Por lo tanto, el valor óptimo para el problema de Kantorovich es una cota para el valor óptimo del problema de Monge:
+
+	\begin{equation}
+		\inf_{P\in \Pi_d(\mu,\nu)} \dotproduct{P}{C}_F
+		\leq \dotproduct{P^{T^*}}{C}_F
+		= \sum_{i=1}^{n} c(x_i, T^*(x_i))
+		= \inf_{\feasible{T:\xspace\to\yspace}{T_\#\mu=\nu}} \sum_{i=1}^n c(x_i,T(x_i))
+	\end{equation}
+\end{proof}
+
+Es importante notar de la demostración que, si bien la desigualdad anterior es estricta en muchos casos, para tener la igualdad basta encontrar un plan de Kantorovich $P^*$ que sea determinista (en el sentido que lo es $P^{T^*}$ en \eqref{eq:deterministic_plan}). Además, el mapa de transporte $T:\xspace\to\yspace$ que induce este determinismo es óptimo para el problema de Monge. Esta propiedad se observa al considerar medidas uniformes: en la \autoref{ot/monge} se indicó que el problema de Monge discreto tiene una solución $T^*:\xspace\to\yspace$ cuando $n=m$ y $a=b=\frac{1}{n}\1$. En este escenario, el plan de transporte determinista que induce $T^*$ resulta ser óptimo para el problema de Kantorovich:
+
+\begin{prop}
+	\label{prop:matching_existence}
+	Dados dos conjuntos discretos $\xspace,\yspace$ con el mismo cardinal ($n=m$) y dos medidas uniformes
+
+	\begin{equation}
+		\mu = \sum_{i=1}^n \frac{1}{n} \delta_{x_i}\in\probmeasure{\xspace},
+		\quad
+		\nu = \sum_{j=1}^n \frac{1}{n} \delta_{y_j}\in\probmeasure{\yspace},
+	\end{equation}
+
+	Entonces, tanto el problema de Monge discreto, \eqref{eq:monge_discrete}, como el problema de Kantorovich discreto, \eqref{eq:kantorovich_discrete} tienen solución. Más aún, una mapa de Kantorovich $P^*$ corresponde a la matriz de permutación (escalada) asociada a un mapa de Monge $T^*$:
+
+	\begin{equation}
+		P_{ij}^* = \begin{cases}
+			\frac{1}{n} & \text{si } T^*(x_i) = y_j \\
+			0           & \text{si no}
+		\end{cases}
+	\end{equation}
+\end{prop}
+
+Es importante indicar que, si bien el escenario que cubre esta proposición es uno de los más simples, la existencia del mapa de Monge $T^*$ no es directa ya que la demostración de esta propiedad hace uso del teorema de Birkhoff–von Neumann\footnote{Este teorema afirma que los vértices del polítopo formado por las matrices doblemente estocástica corresponden precisamente a matrices de permutación.} (ver, por ejemplo, \cite{Thorpe2018}). Por otra parte, en el \autoref{teo:brenier} se obtiene un resultado similar para el caso continuo en $\R^d$.
+
+\subsubsection{Problema continuo}
+
+Al igual que para el problema de Monge, el problema de Kantorovich discreto puede ser extendido al caso continuo. Para esto, es importante notar que cada plan de transporte $P\in\Pi_d(\mu,\nu)$ en el problema discreto \eqref{eq:kantorovich_discrete} se puede identificar con una medida discreta $\pi\in\probmeasure{\xspace\times\yspace}$, donde $P_{ij}$ corresponde a la masa que $\mu$ le entrega al elemento $(x_i,y_j)\in\xspace\times\yspace$. En consecuencia la medida $\mu$ tendrá primera marginal $\mu\in\probmeasure{\xspace}$ y segunda marginal $\nu\in\probmeasure{\xspace}$. De este modo, la identificación del conjunto de matrices $\Pi_d(\mu,\nu)$ en el conjunto de medidas $\probmeasure{\xspace\times\yspace}$ ocurre mediante la inyección
+
+\begin{equation}
+	\label{eq:coupling_identification}
+	P\in\Pi_d(\mu,\nu)\mapsto \pi = \sum_{i=1}^{n}\sum_{j=1}^{m} P_{ij}\delta_{(x_i, y_j)} \in\probmeasure{\xspace\times\yspace}
+\end{equation}
+
+Con esta observación, el conjunto factible discreto $\Pi_d(\mu,\nu)$ se puede extender al caso continuo $\xspace\subset\R^n$, $\yspace\subset\R^m$ como las medidas en $\probmeasure{\xspace\times\yspace}$ que tienen primera marginal $\mu\in\probmeasure{\xspace}$ y segunda marginal $\nu\in\probmeasure{\yspace}$. Dicho conjunto, denotado por $\Pi(\mu,\nu)$, se denomina conjunto de \textit{copuling} entre $\mu$ y $\nu$ y, al igual que para $\Pi_d(\mu,\nu)$ en el caso discreto, es no vacío ya que siempre contiene la medida producto $\mu\otimes\nu\in\probmeasure{\xspace\times\yspace}$ definida como $(\mu\otimes\nu)(A\times B)=\mu(A)\nu(B)$ para $A\times B\in\borel{\xspace}\times\borel{\yspace}$. En efecto, su primera marginal es:
+
+\begin{equation}
+	(\mu\otimes\nu)_1(A)
+	= (\mu\otimes\nu)(A\times\yspace)
+	= \int_{A\times\yspace} \d\,(\mu\otimes\nu)(x,y)
+	= \int_A \parent{\int_{\yspace} \d\nu(y)} \d\mu(x)
+	= \int_A \d\mu(x)
+	= \mu(A)
+\end{equation}
+
+Del mismo modo se muestra que $(\mu\otimes\nu)_2 = \nu$, por lo que, efectivamente, $\mu\otimes\nu\in\Pi(\mu,\nu)$.
+
+Notar que en el caso discreto (i.e., con $\xspace$ e $\yspace$ conjuntos finitos), el conjunto factible $\Pi_d(\mu,\nu)$ se puede identificar con $\Pi(\mu,\nu)$ vía la inyección dada en \eqref{eq:coupling_identification} (que restringida a $\Pi(\mu,\nu)\subset\probmeasure{\xspace\times\yspace}$ es biyección). En este caso, la matriz de probabilidades $P=ab^\top\in\Pi_d(\mu,\nu)$ se identifica precisamente con la medida producto discreta $\mu\otimes\nu\in\probmeasure{\xspace\times\yspace}$. En la \autoref{fig:ot/type_of_couplings} se puede observar ejemplos de couplings cuando se trabaja con medidas discretas, continuas o mixtas.
+
+\insertimage{ot/type_of_couplings}{0.7}{Ejemplos de couplings entre las medidas de probabilidad $\alpha$ y $\beta$ cuando se considera un marco discreto (izquierda), semidiscreto (centro) o continuo (derecha). Imagen obtenida desde \cite{peyré2020computational}.}
+
+Por otra parte, es útil indicar que la pertenencia al conjunto de couplings $\Pi(\mu,\nu)$ se puede caracterizar mediante funciones test:
+
+\begin{prop}[caracterización de couplings]
+	Sean $(\xspace,\salgebra_\xspace)$ e $(\yspace,\salgebra_\yspace)$ espacios medibles y $\mu\in\probmeasure{\xspace}$, $\nu\in\probmeasure{\yspace}$ medidas de probabilidad. Entonces, para $\pi\in\probmeasure{\mu,\nu}$, $\pi\in\Pi(\mu,\nu)$ si y solo si
+
+	\begin{equation}
+		\int_{\xspace\times\yspace} (\phi\oplus\psi)(x,y)\d\pi(x,y) =
+		\int_\xspace \phi(x)\d\mu(x) + \int_\yspace \psi(y)\d\nu(y),
+		\quad\forall (\phi,\psi)\in L^1(\xspace,\mu)\times L^1(\yspace,\nu)
+	\end{equation}
+
+	donde $\phi\oplus\psi:\xspace\times\yspace\to\R$ es la suma tensorial: $(\phi\oplus\psi)(x,y):=\phi(x)+\psi(y)$. Además, la propiedad sigue siendo cierta si se considera $(\phi,\psi)\in L^\infty(\xspace)\times L^\infty(\yspace)\subset L^1(\xspace)\times L^1(\yspace)$. Más aún, si $\xspace$ e $\yspace$ son espacios topológicos localmente compactos\footnote{Un espacio topológico se dice localmente compacto si todo punto posee una vecindad compacta. En particular, $\R^d$ es localmente compacto.}, es suficiente considerar solo las funciones continuas y acotadas: $(\phi,\psi)\in \continuousb{\xspace}\times \continuousb{\yspace}\subset L^\infty(\xspace)\times L^\infty(\yspace)$.
+\end{prop}
+
+Con el conjunto factible bien definido, el funcional de costo para la formulación continua ahora es una función en $\xspace\times\yspace$, por lo que ya no es posible identificarlo con una matriz. Con estas observaciones, el problema de Kantorovich discreto \eqref{eq:kantorovich_discrete} se generaliza al caso continuo como:
+
+\begin{defn}[Problema de Kantorovich, caso continuo]
+	Dadas dos medidas $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$, el problema de Kantorovich asociado a un funcional de costo integrable $c:\xspace\times\yspace\to\R$ es:
+
+	\begin{equation}
+		\label{eq:kantorovich_continuous}
+		\inf_{\pi \in \Pi(\mu,\nu)} \int_{\R^n\times\R^m} c(x, y) \d\pi(x, y)
+	\end{equation}
+
+	donde el conjunto factible es el conjunto de \textit{couplings} entre $\mu$ y $\nu$ definido como:
+
+	\begin{equation}
+		\label{eq:continuous_coupling}
+		\Pi(\mu,\nu) := \left\{\pi\in\probmeasure{\R^n\times\R^m}\,:\,
+		\pi_1(A) = \mu(A),\, \forall A\subset\R^n, \quad
+		\pi_2(B) = \nu(A),\, \forall B\subset\R^m\right\}
+	\end{equation}
+
+	A una solución óptima $\pi^*$ se le denomina plan de Kantorovich.
+\end{defn}
+
+En la \autoref{fig:ot/optimal_coupling1} y \autoref{fig:ot/optimal_coupling2} se pueden ver ejemplos de solución para este problema. Desde el punto de vista del problema de transporte de tierra con el que se motivó el problema de Monge continuo, los planes de transporte $\pi\in\Pi(\mu,\nu)$ se interpretan considerando que $\d\pi(x,y)$ es la cantidad infinitesimal de masa transferida desde $\d x$ hacia $\d y$, es decir, para un volumen $A\subset\R^2$ en el montículo de origen y otro volumen $B\subset\R^2$ en el montículo de llegada, la cantidad de masa transferida desde $A$ hacia $B$ es $\pi(A\times B)$.
+
+\insertimage{ot/optimal_coupling1}{0.8}{Plan de Kantorovich para distintos pares de medidas $\alpha$ y $\beta$. (Arriba) las flechas indican cómo se debe repartir la masa de $\alpha$ en $\beta$ para el transporte óptimo. (abajo) coupling óptimo del problema. Imagen obtenida desde \cite{peyré2020computational}.}
+
+\insertimage{ot/optimal_coupling2}{0.5}{Solución para el problema de Kantorovich entre dos medidas $\alpha$ y $\beta$. (izquierda) coupling óptimo entre dos medidas continuas, donde la intensidad del color negro indica la densidad de masa del \textit{coupling} en cada punto. Notar que, en este caso, el plan de Kantorovich está soportado precisamente en el gráfico del mapa de Monge para este problema (Derecha) Plan de Kantorovich entre dos medidas discretas, donde el radio de cada círculo es proporcional a la masa asignada a cada átomo. Imagen obtenida desde \cite{peyré2020computational}.}
+
+Por otra parte, la restricción $\pi_1(A)=\mu(A)$ para $\pi\in\Pi(\mu,\nu)$ indica que para cualquier volumen de origen $A\subset\R^2$, la cantidad de masa transferida desde $A$ hacia el montículo de llegada en $\R^2$ debe ser igual a la masa de $A$. Análogamente, la restricción $\pi_2(B)=\nu(B)$ indica que para cualquier volumen de llegada $B\subset\R^2$, la cantidad de masa transferida desde el montículo de origen en $\R^2$ hacia $B$ debe ser igual a la masa de $B$. En este problema, la medida producto $\mu\otimes\nu\in\Pi\parent{\mu,\nu}$ es el plan de transporte que envía cada porción de tierra $A\subset\R^2$ a todo el montículo de llegada, repartiendo su masa de forma proporcional a como es la masa que pide el montículo de llegada de acuerdo a la medida $\nu$.
+
+Cuando se plantea el problema de transporte óptimo sobre un mismo espacio $\R^d$ tanto en el origen como en la llegada (como en el problema de transporte de tierra), se suele trabajar con funcionales de costo $c:\xspace\times\yspace\to\R_+$ de la forma $c(x,y)=d(x-y)$, con $d:\R^d\to\R$ una función convexa, por lo que, en este caso, el problema de Kantorovich general sigue siendo convexo. Un caso importante es considerar un costo cuadrático mediante $d(z)=\frac{1}{2}\norm{z}^2$ ya que, en este caso, el problema de Kantorovich permite definir una métrica entre las medidas $\mu$ y $\nu$, denominada distancia de Wasserstein y estudiada en la \autoref{ot/dynamic/wasserstein}.
+
+Con respecto a la existencia de una solución, si bien el conjunto factible $\Pi(\mu,\nu)$ es siempre no vacío, es necesario agregar hipótesis adicionales para garantizar que el problema es acotado y que el ínfimo efectivamente se alcanza en un plan de transporte óptimo:
+
+\begin{prop}
+	Sean $\xspace\subset\R^n$ e $\yspace\subset\R^m$ conjuntos cerrados y acotados y $\mu\in\probmeasure{\xspace}$, $\nu\in\probmeasure{\yspace}$ dos medidas de probabilidad en estos espacios. Si $c:\xspace\otimes\yspace\to\R$ es continua, entonces el problema de Kantorovich continuo \eqref{eq:kantorovich_continuous} adaptado a este escenario posee solución.
+\end{prop}
+
+Para demostrar esta propiedad es necesario hacer uso de resultados de topología y teoría de la medida, por lo que se omitirá la demostración\footnote{De forma resumida, el teorema de Prokhorov permite concluir que $\Pi(\mu,\nu)$ es compacto (para la convergencia débil), mientras que la continuidad de $c$ permite concluir que el funcional $\pi\mapsto \int c\d\pi$ es continuo (también para la convergencia débil), permitiendo concluir el resultado mediante el teorema de Weierstrass.}. En \cite{villani2003topics} se puede encontrar una demostración bajo hipótesis más débiles.
+
+Con respecto a la relación entre el problema de Monge y el problema de Kantorovich, se tiene la misma desigualdad que en el caso discreto y se agrega una condición suficiente para alcanzar la igualdad que será útil en el \autoref{teo:brenier}:
+
+\begin{prop}
+	\label{prop:monge_kantorovich_ineq_continuous}
+	Se tiene la siguiente desigualdad para los problemas de Monge y Kantorovich:
+
+	\begin{equation}
+		\inf_{\pi \in \Pi(\mu,\nu)} \int_{\xspace\times\yspace} c(x, y) \d\pi(x, y) \leq
+		\inf_{\feasible{T:\xspace\to\yspace}{T_\#\mu=\nu}}
+		\int_{\xspace} c(x, T(x)) \d\mu(x)
+	\end{equation}
+
+	Además, para que la igualdad se alcance basta que exista un plan de Kantorovich \textit{determinista} $\pi^*$ de la forma $\pi^* = (\operatorname{Id}\otimes T)_\#\mu$, donde $T:\xspace\to\yspace$ es algún un mapa de transporte. Más aún, en este caso el mapa $T$ es óptimo para el problema de Monge.
+\end{prop}
+
+En la proposición anterior, la igualdad $\pi^* = (\operatorname{Id}\otimes T)_\#\mu$ indica que el plan de transporte $\pi^*$ es la medida que induce $\mu$ en $\xspace\times\yspace$ a través de la función $x\in\xspace\mapsto (x,T(x))\in\xspace\times\yspace$ (ver \autoref{fig:ot/deterministic_plan}). Este plan de transporte se considera determinista debido a que no realiza división de masa. En efecto, por la propia definición de $\pi^*$, su soporte está contenido en el grafo del mapa de transporte $T$:
+
+\begin{equation}
+	\supp{\pi^*}
+	\subset \operatorname{gr}(T) := \{(x,T(x)) : x\in\xspace\}
+	\subset \xspace\times\yspace
+\end{equation}
+
+Por lo que es posible recuperar un mapa de transporte (el mismo mapa $T$) a partir de $\pi^*$, lo cual no es posible cuando el plan de transporte $\pi^*$ no tiene esta propiedad de determinismo, por lo que se debe recurrir a otras técnicas como las proyecciones baricéntricas (ver \cite{peyré2020computational}).
+
+Por otra parte, en el caso particular $\xspace=\yspace=\R^d$, bajo algunas hipótesis adicionales, sí es posible encontrar planes de Kantorovich deterministas. Sin embargo, para obtener este resultado será necesario estudiar la formulación dual del problema de Kantorovich la cual posteriormente será utilizada (en su formulación regularizada) para desarollar el algoritmo de Sinkhorn, el cual es el algoritmo más utilizado para resolver el problema de Schrödinger.
+
+Por otra parte, como se verá en el \autoref{eot_sbp}, una versión regularizada del problema de Kantorovich será equivalente al problema del puente de Schrödinger estático, mostrando que la teoría de transporte óptimo estudiada es directamente aplicable al problema de Schrödinger.
+
+\subsection{Formulación dual}
+\label{ot/kantorovich/dual}
+
+Dado que el problema de Kantorovich es un problema de minimización convexo (al menos su versión discreta), es natural preguntarse por su problema dual, el cual es un problema de maximización convexo. Como se verá a continuación, la formulación dual reduce significativamente la cantidad de incógnitas buscadas en el problema de optimización. Además, el hecho de trabajar con un problema primal convexo permitirá concluir que hay dualidad fuerte tanto en el caso discreto como en el caso continuo.
+
+\subsubsection{Problema dual discreto}
+
+El resultado de dualidad en el caso discreto es el siguiente:
+
+\begin{prop}[dualidad fuerte para Kantorovich, caso discreto]
+	\label{prop:duality_discrete}
+	El problema dual del problema de Kantorovich discreto \eqref{eq:kantorovich_discrete} es:
+
+	\begin{equation}
+		\label{eq:kantorovich_dual_discrete}
+		\sup_{\feasible{(\phi,\psi)\in\R^n\times\R^m} {\phi\oplus \psi \leq C}}
+		\dotproduct{\phi}{a} + \dotproduct{\psi}{b} = \sum_{i=1}^n \phi_i a_i + \sum_{j=1}^m \psi_j b_j
+	\end{equation}
+
+	donde la restricción $\phi\oplus \psi \leq C$ indica que $\phi_i+\psi_j \leq C_{ij}, \, \forall i\in\{1,\ldots,n\}, \, \forall j\in\{1,\ldots,m\}$. Además, hay dualidad fuerte:
+
+	\begin{equation}
+		\label{eq:kantorovich_strong_duality_discrete}
+		\inf_{P\in \Pi_d(\mu,\nu)} \sum_{i=1}^{n}\sum_{j=1}^{m} C_{ij}P_{ij}
+		= \sup_{\feasible{(\phi,\psi)\in\R^n\times\R^m}{\phi\oplus \psi \leq C}}
+		\dotproduct{\phi}{a} + \dotproduct{\psi}{b} = \sum_{i=1}^n \phi_i a_i + \sum_{j=1}^m \psi_j b_j
+	\end{equation}
+
+	A un par de vectores duales óptimos $(\phi^*,\psi^*)\in\R^n\times\R^m$ se les denomina \textit{potenciales de Kantorovich}.
+\end{prop}
+
+Notar que en esta proposición, la notación $\phi\oplus\psi\in\matrixspace{n,m}{\R}$ representa la suma tensorial entre $\phi$ y $\psi$: $\parent{\phi\oplus\psi}_{ij}=\phi_i+\psi_j$ o, equivalentemente, $\phi\oplus\psi = \phi\1_m^\top + \1_n \psi^\top$.
+
+\begin{proof}
+	\pendiente{pendiente. directo de la dualidad de programación lineal.}
+\end{proof}
+
+Por otra parte, la propiedad de dualidad permite caracterizar las soluciones primales-duales mediante las condiciones de Karush-Kuhn-Tucker. En específico, se puede concluir el siguiente resultado:
+
+\begin{cor}
+	Sea $(\phi^*,\psi^*)\in\R^n\times\R^m$ un par de potenciales de Kantorovich asociados al problema dual \eqref{eq:kantorovich_dual_discrete}. Entonces, cualquier solución $P^*\in\Pi_d(\mu,\nu)$ para el problema primal \eqref{eq:kantorovich_discrete} tiene su soporte en las coordenadas donde se cumple la restricción dual con igualdad:
+
+	\begin{equation}
+		\{(i,j):\,P_{ij}^*>0\}
+		\subset \{(i,j):\, \phi^*_i + \psi^*_j = C_{ij}\},
+		\subset \{1,\ldots,n\}\times\{1,\ldots,m\}
+	\end{equation}
+
+\end{cor}
+
+\begin{proof}
+	Esta propiedad es consecuencia directa de la propiedad de holgura complementaria. En efecto, la restricción dual asociada a la variable primal $P_{ij}$ es $\phi_i + \psi_j - C_{ij}\leq 0$, por lo que la propiedad de holgura complementaria indica que $P_{ij}\parent{\phi_i + \psi_j - C_{ij}} = 0$. En particular, si $P_{ij}$ entonces $\phi_i + \psi_j - C_{ij} = 0$.
+\end{proof}
+
+Una ventaja importante que se obtiene al usar la formulación dual se observa al momento de intentar resolver numéricamente el problema de Kantorovich. En efecto, para resolver el problema de Kantorovich discreto \eqref{eq:kantorovich_discrete} es necesario encontrar una matriz $P\in\Pi_d(\mu,\nu)$ ($n\cdot m$ parámetros), mientras que al usar la formulación discreta dual \eqref{eq:kantorovich_dual_discrete} solo es necesario encontrar dos vectores $(f,g)\in\Upsilon_d(c)$ ($n+m$ parámetros).
+
+Por otra parte, una forma usual de interpretar el problema de Kantorovich discreto dual es utilizando el problema de transporte desde yacimientos hacia fábricas. Para esto, considerar que el dueño de los yacimientos decide contratar una empresa externa que realice el servicio de transporte de la materia prima, pagando una cantidad $\phi_i$ por cargar una unidad de materia prima desde el yacimiento $i$, y una cantidad $\psi_j$ por descargar una unidad de materia prima en la fábrica $j$, sin importar la distancia recorrida durante el transporte. Desde el punto de vista de la empresa externa, esta buscará vectores de cobro $\phi\in\R^n$ y $\psi\in\R^m$ de tal forma que $\phi_i+\psi_j\leq C_{ij}$ ya que de lo contrario, el dueño de los yacimientos no tendrá motivos para realizar el transporte con esta empresa. La dualidad fuerte entregada en \eqref{eq:kantorovich_strong_duality_discrete} afirma que la empresa externa puede encontrar vectores de cobro $(\phi,\psi)$ de tal forma que su ganancia sea igual al costo de transporte original que hubiese pagado el dueño de los yacimientos sin la empresa externa.
+
+\subsubsection{Problema dual continuo}
+
+En el caso continuo, se tiene un resultado análogo al presentado en la \autoref{prop:duality_discrete}:
+
+\begin{teo}[dualidad fuerte para Kantorovich, caso continuo]
+	\label{teo:kantorovich_dual_continuous}
+	Dados dos conjuntos $\xspace\subset\R^n$ e $\yspace\subset\R^m$, y sea $c:\xspace\times\yspace\to\R_+$ un funcional de costo continuo sobre estos espacios. Entonces, el problema dual del problema de Kantorovich continuo \eqref{eq:kantorovich_continuous} es:
+
+	\begin{equation}
+		\label{eq:kantorovich_dual_continuous}
+		\sup_{\feasible{(\phi,\psi)\in \continuousb{\xspace}\times \continuousb{\yspace}}{\phi\oplus\psi\leq c}}
+		\int_{\xspace} \phi(x) \d\mu(x) + \int_{\yspace} \psi(y) \d\nu(y)
+	\end{equation}
+
+	donde $\continuousb{\xspace}$ (resp. $\continuousb{\yspace}$) es el conjunto de funciones continuas y acotadas en $\xspace$ (resp. $\yspace$), y la restricción $\phi\oplus\psi\leq c$ indica que $(\phi\oplus\psi)(x,y):=\phi(x)+\psi(y)\leq c(x,y),\,\forall x\in\xspace,\,\forall y\in\yspace$. Además, hay dualidad fuerte:
+
+	\begin{equation}
+		\inf_{\pi\in\Pi(\mu,\nu)} \int_{\xspace\times\yspace} c(x, y) \d\pi(x, y)
+		= \sup_{\feasible{(\phi,\psi)\in \continuousb{\xspace}\times \continuousb{\yspace}}{\phi\oplus\psi\leq c}}
+		\int_{\xspace} \phi(x) \d\mu(x) + \int_{\yspace} \psi(y) \d\nu(y)
+	\end{equation}
+
+	A un par de funcionales duales óptimos $(\phi^*,\psi^*)\in \continuousb{\xspace}\times \continuousb{\yspace}$, se les denomina \textit{potenciales de Kantorovich}.
+\end{teo}
+
+Al igual que para el caso discreto, el soporte para el plan de transporte óptimo está contenido en el subconjunto que activa la desigualdad dual en \eqref{eq:kantorovich_dual_continuous}:
+
+\begin{cor}
+	\label{cor:supp_slackness}
+	Sea $(\phi,\psi)\in \continuousb{\xspace}\times \continuousb{\yspace}$ un par de potenciales de Kantorovich asociados al problema dual \eqref{eq:kantorovich_dual_continuous}. Entonces, cualquier solución $\pi^*\in\Pi(\mu,\nu)$ para el problema primal \eqref{eq:kantorovich_continuous} tiene su soporte en un subconjunto específico de $\xspace\times\yspace$:
+
+	\begin{equation}
+		\supp{\pi}
+		\subset \{(x,y)\in\xspace\times\yspace:\, \phi(x) + \psi(y) = c(x,y)\}
+	\end{equation}
+\end{cor}
+
+Notar que el problema dual se restringe a optimizar sobre funciones duales $(\phi,\psi)$ continuas y acotadas y no sobre funciones arbitrarias en $L^1(\xspace)\times L^1(\yspace)$. Esto es posible debido a que las funciones en $\continuousb{\R^d}$ son capaces de aproximar suficientemente bien a las funciones en $L^1(\R^d)$\footnote{Más precisamente, dada una medida de probabilidad $\mu\in\probmeasure{\R^d}$, el conjunto $\continuousb{\R^d}\subset L^1(\R^d,\mu)$ es denso en $L^1(\R^d,\mu)$: para cualquier función $f\in L^1(\R^d,\mu)$ y error $\epsilon>0$, existe una función $g\in\continuousb{\R^d}$ tal que $\int_{\R^d} |f-g| \d\mu<\epsilon$.}. Una demostración del \autoref{teo:kantorovich_dual_continuous} se puede encontrar en \cite{villani2003topics}.
+
+EL problema de Kantorovich dual permite demostrar que el problema de Kantorovich es equivalente (en el sentido que lo indica el \autoref{teo:brenier}) al problema de Monge en el caso particular $\xspace=\yspace=\R^d$ cuando se considera un costo cuadrático, el cual es el escenario más importante debido a su conexión con el problema de Schrödinger en el \autoref{eot_sbp}. Para mostrar este resultado, se vuelve necesario revisar algunos conceptos de análisis convexo:
+
+\begin{defn}[subdiferencial]
+	Dada una función convexa $f:\R^d\to\R$, su subdiferencial $\partial f$ es la función (multivaluada) que asigna cada $x\in\R^d$ a un conjunto de subgradientes:
+
+	\begin{equation}
+		\label{eq:subdiferential}
+		\partial f(x) := \{y\in\R^d\,:\,f(z)\geq \tilde{f}_y(z) := f(x) + \dotproduct{y}{z-x},\,\forall z\in\R^d\}
+	\end{equation}
+
+	donde $\dotproduct{\cdot}{\cdot}$ es el producto interno usual en $\R^d$ (producto punto).
+\end{defn}
+
+Este concepto permite generalizar el concepto de gradiente a funciones convexas que no necesariamente son diferenciables en todo su dominio. En efecto, la desigualdad en \eqref{eq:subdiferential} indica que la recta tangente $\tilde{f}_y$ (cuya pendiente es $y\in\partial f(x)$) está siempre por debajo del gráfico de $f$, lo cual es una propiedad que caracteriza a las funciones convexas diferenciables. En la \autoref{fig:ot/subdifferential} se puede ver el subdiferencial de una función no diferenciable. Se puede probar que si $f:\R^d\to\R$ sí es diferenciable en $x\in\R^d$, entonces $\partial f(x)=\{\nabla f(x)\}$ (ver, por ejemplo, \cite{villani2003topics}). Este resultado es el que permitirá posteriormente caracterizar el mapa de Monge $T:\xspace\to\yspace$ como el gradiente de una función convexa en el \autoref{teo:brenier}.
+
+\insertimage{ot/subdifferential}{0.5}{La función $f$ no es diferenciable en el punto marcado. Su subdiferencial en ese punto corresponde a todas las pendientes de las rectas tangentes que se mantienen por debajo del gráfico de la función. Si la función es diferenciable, existe una única recta tangente cuya pendiente viene dada por el gradiente de $f$ en el punto de tangencia.}
+
+Por otra parte, el concepto de transformada de Legendre permitirá reescribir la condición de factibilidad dual $\phi\oplus\psi\leq c$ utilizando el concepto de subdiferencial:
+
+\begin{defn}[transformada de Legendre]
+	\label{defn:legendre}
+	Dada una función $f:\R^d\to\R$, su transformada de Legendre\footnote{En la literatura es usual usar la notación $f^*$ en vez de $f_*$. Aquí se preferirá la segunda notación para no confundir con la notación usada para soluciones óptimas.} es otra función $f_*:\R^d\to\R$ definida por:
+
+	\begin{equation}
+		f_*(y) = \sup_{x\in\R^d} \dotproduct{x}{y} - f(x)
+	\end{equation}
+\end{defn}
+
+Un resultado que será importante es que la transformada de Legendre permite caracterizar completamente el subdiferencial de una función convexa, en efecto:
+
+\begin{prop}
+	\label{prop:subdiff_legendre}
+	Dada una función convexa y semi-continua inferior $f:\R^d\to\R$, se tiene que $\forall x,y\in\R^d$:
+
+	\begin{equation}
+		y\in\partial f(x) \Leftrightarrow f(x) + f_*(y) = \dotproduct{x}{y}
+	\end{equation}
+\end{prop}
+
+Con estos resultados auxiliares, se puede enunciar y demostrar el teorema de Brenier:
+
+\begin{teo}[Brenier]
+	\label{teo:brenier}
+	Sean $\mu,\nu\in\probmeasure{\R^d}$ medidas de probabilidad con segundo momento finito\footnote{Los momentos de una medida de probabilidad $\mu\in\probmeasure{\R^d}$ son los momentos de una variable aleatoria cuya ley es $\mu$.}:
+
+	\begin{equation}
+		\int_{\R^d} \norm{x}_2^2 \d\mu(x)<\infty,
+		\qquad
+		\int_{\R^d} \norm{y}_2^2 \d\nu(y)<\infty
+	\end{equation}
+
+	Si $\mu$ posee función de densidad\footnote{Esta hipótesis se puede relajar a que $\mu\in\probmeasure{\R^d}$ no le entrega masa a conjuntos medibles con dimensión de Hausdorff-Besicovitch menor que $d$.} (con respecto a la medida de Lebesgue), entonces existe una única solución $\pi^*\in\Pi(\mu,\nu)$ para el problema de Kantorovich \eqref{eq:kantorovich_continuous} con funcional de costo $c(x,y)=\frac{1}{2}\norm{x-y}_2^2$. Además, esta solución es determinista (en el sentido que lo indica la \autoref{prop:monge_kantorovich_ineq_continuous}) de la forma
+
+	\begin{equation}
+		\pi^* = \parent{\operatorname{Id}\otimes \nabla f}_\#\mu
+	\end{equation}
+
+	para alguna función convexa $f:\R^d\to\R$.
+\end{teo}
+
+\begin{proof}
+	Para empezar, notar que la función objetivo en \eqref{eq:kantorovich_continuous} con $c(x,y)=\frac{1}{2}\norm{x-y}_2^2$ se puede reescribir como
+
+	\begin{align}
+		\int_{\R^d\times\R^d} c(x,y) \d\pi(x,y) & = \frac{1}{2}\int_{\R^d\times\R^d} \parent{\norm{x}_2^2 + \norm{y}_2^2} \d\pi(x,y) - \int_{\R^d\times\R^d} \dotproduct{x}{y} \d\pi(x,y)                                 \\
+		                                        & = \underbrace{\frac{1}{2}\parent{\int_{\R^d} \norm{x}_2^2 \d\mu(x) + \int_{\R^d} \norm{y}_2^2 \d\nu(y)}}_{<\infty} + \int_{\R^d\times\R^d} \dotproduct{x}{y} \d\pi(x,y)
+	\end{align}
+
+	Por lo que es suficiente resolver el siguiente problema de optimización:
+
+	\begin{equation}
+		\sup_{\pi\in\Pi(\mu,\nu)} \int_{\R^d\times\R^d} \dotproduct{x}{y} \d\pi(x,y)
+	\end{equation}
+
+	Análogo a lo obtenido en el \autoref{teo:kantorovich_dual_continuous}, el dual de este nuevo problema es:
+
+	\begin{equation}
+		\label{eq:brenier_dual}
+		\inf_{\feasible{(f,g)\in \continuousb{\R^n}\times\continuousb{\R^m}}{f\oplus g \geq \dotproduct{\cdot}{\cdot}}}
+		\int_{\R^d} f(x) \d\mu(x) + \int_{\R^d} g(y) \d\nu(y)
+	\end{equation}
+
+	Por otra parte, para una variable dual $f\in \continuousb{\R^n}$ fija, la restricción $f\oplus g \geq \dotproduct{\cdot}{\cdot}$ se puede reescribir de la siguiente forma:
+
+	\begin{align}
+		 & f(x)+g(y) \geq \dotproduct{x}{y} ,\,\forall x,y\in\R^d                                           \\
+		 & \iff g(y) \geq \dotproduct{x}{y} - f(x) ,\,\forall x,y\in\R^d                                    \\
+		 & \iff g(y) \geq \underbrace{\sup_{x\in\R^d} \dotproduct{x}{y} - f(x)}_{f_*(y)},\,\forall y\in\R^d
+	\end{align}
+
+	Por lo tanto, para respetar esta restricción, se puede minimizar directamente $g \mapsto \int_{\R^d} g(y) \d\nu(y)$ tomando $g=f_*$. En consecuencia, el problema \eqref{eq:brenier_dual} se puede reescribir de forma irrestricta mediante la siguiente formulación semidual:
+
+	\begin{equation}
+		\inf_{f\in \continuousb{\R^d}}
+		\int_{\R^d} f(x) \d\mu(x) + \int_{\R^d} f_*(y) \d\nu(y)
+	\end{equation}
+
+	del mismo modo, fijando ahora la variable dual $g=f_*$, la restricción $f\oplus g \geq \dotproduct{\cdot}{\cdot}$ es equivalente a la restricción $f(x) \geq f_{**}(x) = \sup_{y\in\R^d} \dotproduct{x}{y} - f_*(x)$, por lo que, nuevamente, se puede elegir a $f_{**}$ como el primer potencial para minimizar ahora la primera integral.
+
+	En consecuencia, dado que la transformada de Legendre define una función convexa, se puede restringir la búsqueda a potenciales $f\in \continuousb{\R^d}$ convexos:
+
+	\begin{equation}
+		\inf_{f\in \continuousb{\R^d}\text{ convexa}}
+		\int_{\R^d} f(x) \d\mu(x) + \int_{\R^d} f_*(y) \d\nu(y)
+	\end{equation}
+
+	Por otra parte, por la condición de holgura complementaria (análogo a lo realizado en el \autoref{cor:supp_slackness}):
+
+	\begin{equation}
+		\supp{\pi}
+		\subset \{(x,y)\in\R^d\times\R^d:\, f(x) + f^*(y) = \dotproduct{x}{y}\}
+	\end{equation}
+
+	Notar que, gracias a la \autoref{prop:subdiff_legendre}, la igualdad $f(x) + f^*(y) = \dotproduct{x}{y}$ se alcanza si y solo si $y\in\partial f(x)$. Además, como la variable dual $f$ es convexa, en particular es diferenciable casi en todas partes (con respecto a la medida de Lebesgue) y dado que $\mu$ tiene densidad con respecto a esta medida, $f$ también resulta ser diferenciable casi en todas partes con respecto a $\mu$. De esta forma, $\partial f(x) = \{nabla f(x)\}$ $\mu$-c.s. y así,
+
+	\begin{equation}
+		\supp{\pi}
+		\subset \{(x,\nabla f(x)):\,x\in\R^d\} \subset \R^d\times\R^d
+	\end{equation}
+
+	Por lo que $\pi$ es una medida producto soportada en el grafo de la función $\nabla f$ y así, es un plan de transporte determinista $(\operatorname{Id}\otimes\nabla f)_\# \mu$.
+\end{proof}
+
+Es importante mencionar que $\phi$ es $dx$-c.t.p. diferenciable en el interior de su dominio ya que es una función convexa. Además, dado que $\mu$ no le entrega masa a conjuntos pequeños, tiene sentido hablar de $\nabla\phi$ en el soporte de $\mu$. Por otra parte, notar que la medida conjunta $\pi^* = \parent{\operatorname{Id}\otimes \nabla\phi}_\#\mu$ se puede expresar equivalentemente como $d\pi^*(x,y) = d\mu(x)\delta_{y=\nabla\phi(x)}$.
+
+Una consecuencia directa de este teorema es que permite obtener resultados de existencia y unicidad para el problema de Monge con costo cuadrático:
+
+\begin{cor}
+	Bajo las hipótesis del \autoref{teo:brenier}, el mapa de transporte $T=\nabla f$ es la única solución del problema de Monge con funcional de costo $c(x,y)=\frac{1}{2}\norm{x-y}_2^2$.
+\end{cor}
+
+\begin{proof}
+	Notar que, por definición de $\pi^* = \parent{\operatorname{Id}\otimes \nabla f}_\#\mu$, el mapa $x\in\R^d \mapsto \nabla f(x)\in\R^d$ cumple la propiedad $(\nabla f)_\#\mu=\nu$, por lo que $T=\nabla f$ es efectivamente un mapa de transporte. Por otra parte, dado que $\pi^*$ es un plan de transporte determinista y óptimo, por la \autoref{prop:monge_kantorovich_ineq_continuous} se concluye que $\nabla\phi$ es solución del problema de Monge. Además, como el \autoref{teo:brenier} garantiza unicidad para $\pi^*$, se obtiene la unicidad para de solución para el problema de Monge.
+\end{proof}
+
+% Notar que esta transformada es un caso particular de la $c$-transformada (ver \autoref{defn:c_transform}) utilizada para funcionales de costo generales. La transformada de Legendre también se puede ver como la transformada de Fenchel de $\phi$, donde el dual topológico $\xspace^*$ se identifica con $\xspace$ al estar trabajando en un espacio de Hilbert. Por este motivo, esta transformada también se conoce como conjugada convexa.
+
+% \begin{teo}[Knott-Smith]
+
+% 	Sean $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$ medidas de probabilidad con segundo momento finito en ciertos espacios medibles $\xspace,\yspace\subset\R^d$. El plan de transporte $\pi\in\Pi(\mu,\nu)$ es óptimo para el problema de Kantorovich con funcional de costo $c(x,y)=\frac{1}{2}\norm{x-y}^2$ si y solo si existe $\phi\in L^1(\xspace)$ convexa y semi-continua inferior tal que $y\in\partial\phi(x)$ $\pi$-c.s. para $(x,y)\in\xspace\times\yspace$.
+
+% 	Más aún, el par $(\phi,\phi^*)$ minimiza el siguiente problema de optimización:
+
+% 	\begin{equation}
+% 		\inf \{J(\phi,\psi) \,:\, (\phi,\psi)\in L^1(\mu)\times L^1(\nu) \,:\, \phi(x)+\psi(y) \geq \dotproduct{x}{y},\,(\mu\otimes\nu) \text{-c.s.} \}
+% 	\end{equation}
+
+% \end{teo}
+
+% Por otra parte, la transformada de Legendre permite caracterizar las funciones convexas y semi-continuas inferiores de dos formas distintas:
+
+% \begin{prop}[caracterización de funciones convexas s.c.i.]
+
+% Sea $\phi:\R^d\to\R\cup\{+\infty\}$ una función propia, las siguientes afirmaciones son equivalentes:
+
+% \begin{enumerate}
+% 	\item $\phi$ es convexa y semi-continua inferior.
+% 	\item $\phi$ es la transformada de Legendre de alguna función propia.
+% 	\item $\phi^{**}=\phi$.
+% \end{enumerate}
+
+% \end{prop}
+
+% La demostración de estos resultados se puede encontrar en \cite{Thorpe2018}.
+
+\subsubsection{Reformulación mediante funciones \texorpdfstring{$c$}{c}-cóncavas}
+
+En esta subsección se considerará que el funcional de costo $c:\xspace\times\yspace\to\R_+$ en el \autoref{teo:kantorovich_dual_continuous} es acotado. Para este problema dual, los potenciales admisibles $(\phi,\psi)\in L^1(\xspace)\times L^1(\yspace)$ deben ser tales que $\phi(x) + \psi(y) \leq c(x,y)$ $(\mu\otimes\nu)$-c.s. Por lo tanto, fijando un potencial admisible $\phi\in L^1(\xspace)$, el potencial $\psi\in L^1(\yspace)$ debe ser tal que
+
+\begin{equation}
+	\psi(y) \leq c(x,y) - \phi(x), \quad \mu\otimes\nu-\text{c.s.}
+	\iff
+	\psi(y) \leq \inf_{x\in\xspace} c(x,y) - \phi(x)
+\end{equation}
+
+Por lo que se puede elegir el segundo potencial como la función $\phi^c(y) = \inf_{x\in\xspace} c(x,y) - \phi(x)$ para maximizar la función objetivo cuando el primer potencial está fijo. Considerando ahora este nuevo potencial $\phi^c\in L^1(\yspace)$ como fijo, se puede realizar un procedimiento análogo para actualizar el primer potencial:
+
+\begin{equation}
+	\phi(x) \leq c(x,y) - \phi^c(y), \quad \mu\otimes\nu-\text{c.s.}
+	\iff
+	\phi(x) \leq \inf_{y\in\yspace} c(x,y) - \phi^c(y)
+\end{equation}
+
+Por lo que se puede actualizar el primer potencial a la función $\phi^{c\bar c}(x) := \inf_{y\in\yspace} c(x,y) - \phi^c(y)$ para maximizar la función objetivo cuando el segundo potencial está fijo. Este procedimiento motiva las siguientes definiciones, las cuales se pueden considerar como una generalización de la transformada de Legendre (ver \autoref{defn:legendre}):
+
+\begin{defn}[$c$ transformadas y concavidad]
+	\label{defn:c_transform}
+	Sean $f:\xspace\to \overline{\R}$ y $g:\yspace\to \overline{\R}$ funciones arbitrarias. Dado un funcional $c:\xspace\times\yspace\to\R$, se definen las siguientes transformaciones medibles en sus respectivos espacios:
+
+	\begin{itemize}
+		\item $c$-transformada  de $f$: función $f^c:\yspace\to\overline{\R}$ definida como $f^c(y) := \inf\limits_{x\in\xspace} c(x,y) - f(x)$.
+
+		\item $\bar c$-transformada  de $g$: función $g^{\bar c}:\xspace\to\overline{\R}$ definida como $g^{\bar c}(x) := \inf\limits_{y\in\yspace} c(x,y) - g(y)$.
+	\end{itemize}
+
+	Por otra parte, una función $f:\xspace\to\bar\R$ se dirá $c$-cóncava si existe una función $g:\yspace\to\bar\R$ tal que $f=g^{\bar c}$. Análogamente, una función $g:\yspace\to\bar\R$ se dirá $\bar c$-cóncava si existe una función $f:\xspace\to\bar\R$ tal que $g=f^c$.
+\end{defn}
+
+Notar que la única diferencia entre la $c$-transformada y la $\bar c$-transformada es la variable sobre la que actúa el funcional $c$. Por lo tanto, si $c$ es simétrico (i.e., $c(x,y)=c(y,x)$), ambas transformaciones son iguales.
+
+Con estas definiciones, el procedimiento descrito anteriormente comienza con un primer potencial arbitrario, $\phi\in L^1(\xspace)$, y va actualizando alternadamente el otro potencial de tal forma que en cada actualización el valor del funcional de optimización dual en \eqref{eq:kantorovich_dual_continuous} no empeora (y, eventualmente, mejora). Por lo tanto, la cadena de actualizaciones de potenciales es la siguiente:
+
+\begin{equation}
+	\label{eq:c_concave_actualization}
+	(\phi,\phi^c) \to (\phi^{c\bar c}, \phi^c) \to (\phi^{c\bar c}, \phi^{c\bar c c})
+\end{equation}
+
+Si bien se podrían realizar estas iteraciones indefinidamente, se puede demostrar que $\phi^{c\bar c c} = \phi^c$, por lo que la tercera actualización, $(\phi^{c\bar c}, \phi^{c\bar c c})$, es equivalente a $(\phi^{c\bar c}, \phi^c)$, lo cual corresponde a la segunda iteración. Por lo tanto, este procedimiento no permite mejorar la función objetivo más allá de dos iteraciones. De todos modos, este método sugiere que basta encontrar un único potencial $\phi\in L^1(\xspace,\mu)$ para el problema dual \eqref{eq:kantorovich_dual_continuous}. Notando que $f=\phi^{c\bar c}$ en \eqref{eq:c_concave_actualization} es una función $c$-cóncava, se puede probar el siguiente resultado:
+
+\begin{teo}[formulación dual mediante $c$ transformadas]
+	\label{teo:dual_c_transform}
+	Sean $\xspace$ e $\yspace$ espacios polacos con $c:\xspace\times\yspace\to\R_+$ un funcional de costo semicontinuo inferior y acotado. Para dos medidas de probabilidad, $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$, el problema dual \eqref{eq:kantorovich_dual_continuous} es equivalente a:
+
+	\begin{equation}
+		\sup_{\phi\in L^1(\xspace)\, c\text{-cóncava}} \dual{\phi,\phi^c}  = \int_\xspace \phi(x) \d\mu(x) + \int_\yspace \phi^c(y) \d\nu(y)
+	\end{equation}
+
+	En particular, se pueden elegir potenciales de Kantorovich $(\eta^{c \bar c},\eta^c)$, para algún $\eta\in L^1(\xspace,\mu)$.
+\end{teo}
+
+\subsection{Casos particulares en \texorpdfstring{$\R^d$}{Rd}}
+\label{ot/kantorovich/rd}
+
+\subsubsection{Transporte óptimo unidimensional}
+
+Por otra parte, función cuantil de una medida se define como su inversa (por la izquierda) de su función de distribución acumulada:
+
+\begin{defn}[función cuantil]
+	Dada una medida de probabilidad $\mu\in\probmeasure{\R}$ con función de distribución acumulada $F_\mu$, se define la función cuantil de $\mu$, $Q_\mu:[0,1]\to\R$, como:
+
+	\begin{equation}
+		Q_\mu(p) := \inf \{x\in\R\,:\, F_\mu(x)>p\}
+	\end{equation}
+\end{defn}
+
+Esta función actúa como función inversa a la función de distribución acumulada ya que si $F_\mu$ es además estrictamente creciente se obtiene que $Q_\mu(p) = F_\mu^{-1}(p)$, mientras que en los casos donde no hay invertibilidad, se tiene que $F_\mu^{-1}(F_\mu(x)) \geq x$ y $F(F_\mu^{-1}(p)) \geq p$ casi seguramente.
+
+\begin{teo}[plan de transporte óptimo en $\R$]
+	Sean $\mu,\nu\in\probmeasure{\R}$ medidas de probabilidad con funciones de distribución acumulada $F_\mu$ y $F_\nu$ respectivamente. Entonces, para una función continua y convexa $d:\R\times\R\to\R_+$, el plan de transporte óptimo $\bar\pi\in\Pi(\mu,\nu)$ para el problema de Kantorovich entre $\mu$ y $\nu$ con función de costo $c(x,y)=d(x-y)$ tiene la siguiente función de distribución acumulada:
+
+	\begin{equation}
+		F_{\bar\pi}(x,y) = \min \{F_\mu(x),F_\nu(y)\}
+	\end{equation}
+
+	donde $Q_\mu$ y $Q_\nu$ son las funciones cuantil de $\mu$ y $\nu$ respectivamente.
+\end{teo}
+
+Por otra parte, si $\mu$ es además una medida continua, es posible obtener un mapa óptimo de Monge y probar que ambos problemas tienen el mismo valor óptimo:
+
+\begin{cor}
+	Bajo las hipótesis del \autoref{teo:kantorovich_r}, si $\mu$ es una medida no atómica, entonces el ínfimo en el problema de Monge se alcanza y es igual al valor óptimo para el problema de Kantorovich:
+
+	\begin{equation}
+		\min_{T:T_\#\mu=\nu} \monge{T} = \min_{\pi\in\Pi(\mu,\nu)} \kantorovich{\pi}
+	\end{equation}
+
+	Más aún, el mapa $\bar T = Q_\nu \circ F_\mu:\R\to\R$ es una solución para el problema de Monge.
+\end{cor}
+
+Las demostraciones de estos resultados se pueden encontrar en \cite{Thorpe2018}.
+
+\subsubsection{Transporte óptimo mediante potenciales de Kantorovich}
+
+El desarrollo realizado anteriormente puede ser extendido a funcionales de costo más generales:
+
+\begin{teo}[Gangbo-McCann]
+	\label{teo:gangbo_mccann}
+	Sean $\xspace=\yspace=\R^d$ y $\mu\in\probmeasure{\xspace}$, $\nu\in\probmeasure{\yspace}$ medidas de probabilidad sobre estos espacios, donde además se define un funcional de costo $c:\xspace\times\yspace\to\R$. Si $\bar f$ es el primer potencial óptimo $c$-convexo para el problema de Kantorovich y $\bar T:\xspace\to\yspace$ el mapa óptimo para el problema de Monge, entonces:
+
+	\begin{equation}
+		\bar T(x) = \nabla_x c(x,\cdot)^{-1}\circ \nabla \bar f(x)
+	\end{equation}
+\end{teo}
+
+Una demostración de este resultado se puede encontrar en \cite{bunne2023optimal}.
+
+La relación entre $\bar T$ y $\bar f$ se simplifica aún más cuando el costo es invariante bajo traslaciones, es decir, si se puede escribir de la forma $c(x,y)=h(x-y)$, con $h:\R^d\to\R$ una función convexa. En este caso, a la función $h$ se le denomina \textit{potencial de costo}.
+
+\begin{cor}
+	Bajo las hipótesis del \autoref{teo:gangbo_mccann}, si además el funcional de costo tiene un potencial de costo convexo, $h:\R^d\to\R$, entonces:
+
+	\begin{equation}
+		\bar T(x) = x - \nabla h^* \circ \nabla \bar f(x)
+	\end{equation}
+\end{cor}
+
+Además, bajo condiciones adicionales, es posible extender las conclusiones del teorema de Brenier en el \autoref{teo:brenier}:
+
+\begin{teo}
+	Bajo las hipótesis del \autoref{teo:gangbo_mccann}, se considerará que además $\xspace=\yspace$ es compacto y $\mu$ es a.c. con respecto a la medida de Lebesgue, con $\nabla\xspace$ despreciable\footnote{Dado un espacio de medida $(\xspace,\salgebra,\mu)$, un conjunto $A\subset\xspace$ se dirá despreciable si existe $B\in\salgebra$ con $A\subset B$ y $\mu(B)=0$.}. Si el funcional de costo tiene un potencial de costo estrictamente convexo $h:\R^d\to\R$, existe una única solución para el problema de Kantorovich, la cual es de la forma
+
+	\begin{equation}
+		\bar\pi = \parent{\operatorname{Id}\otimes T}_\# \mu
+	\end{equation}
+
+	Además, existe un mapa óptimo para el problema de Monge, $\bar T$, y un potencial óptimo para el problema dual, $\bar \phi$, tal que:
+
+	\begin{equation}
+		T = \operatorname{Id} - \parent{\nabla h}^{-1}\circ \nabla\phi
+	\end{equation}
+\end{teo}
+
+La demostración de este resultado más general se puede encontrar en \cite{santambrogio2019ot}.
+
+\section{Formulación dinámica}
+\label{ot/dynamic}
+
+\subsection{Distancias de Wasserstein}
+\label{ot/dynamic/wasserstein}
+
+A lo largo de esta subsección, se entregarán los resultados para espacios métricos $(\xspace,d)$ generales ya que esta generalidad no agrega dificultad extra en la formulación. En particular, siempre se puede considerar que $\xspace=\R^d$ y $d(x,y)=\norm{x-y}$ (con $\norm{\cdot}$ alguna norma en $\R^d$), lo cual será siempre asumido en las secciones posteriores.
+
+Una propiedad importante del problema de Kantorovich \eqref{eq:kantorovich_continuous} es que, cuando $\mu$ y $\nu$ son medidas en el mismo espacio $\xspace=\yspace$, su valor óptimo define una distancia en $\probmeasure{\xspace}$ cuando se considera $c(x,y)=d(x,y)$ con $d:\xspace\times\xspace\to\R_+$ una distancia en $\xspace$. Esta es una propiedad muy relevante del transporte óptimo ya que en muchos problemas de aprendizaje automático la elección de una buena función objetivo es crucial para un buen desempeño del modelo. Por ejemplo, un avance muy significativo en el desempeño de las redes neuronales fue pasar de usar una función de costo cuadrático a la entropía cruzada (o, equivalentemente, la divergencia de Kullback-Leibler) para comparar distribuciones.
+
+Es importante notar que esta propiedad de ser una distancia no la posee la divergencia de Kullback-Leibler (definida en la \autoref{defn:kl_ac} y luego en la \autoref{defn:kl}) ya que el operador no es simétrico ni cumple la desigualdad triangular. Si bien es posible corregir estos problemas definiendo la distancia de Jensen-Shannon, la distancia inducida por el problema de Kantorovich tendrá mejores propiedades como por ejemplo, permitir trazar geodésicas entre dos distribuciones, lo cual es posible al poder capturar la geometría de los datos. Además, como el valor óptimo del problema de Kantorovich depende únicamente del funcional de costo, esta nueva distancia permitirá comparar distribuciones incluso si las medidas tienen soporte disjunto, lo cual indefine otras funciones de discrepancia como la divergencia de Kullback-Leibler.
+
+\begin{defn}[distancia de Wasserstein]
+
+	Sea $(\xspace,d)$ un espacio métrico. Dado el funcional de costo $c(x,y)=d(x,y)^p$ con $p\in[1,\infty)$, se define la $p$-distancia de Wasserstein entre $\mu,\nu\in\probmeasure{\xspace}$ como:
+
+	\begin{equation}
+		\wasserstein{p}{\mu, \nu} := \left(\min_{\pi \in \Pi(\mu, \nu)} \int_{\xspace\times\xspace} d(x, y)^p d\pi(x, y) \right)^{1/p}
+	\end{equation}
+
+	En el caso $(\xspace,d)=(\R^d,\norm{\cdot - \cdot}_2)$ con $p=2$, está función se conoce como \textit{distancia de Fréchet}.
+
+\end{defn}
+
+El siguiente resultado afirma que $\wasserstein{p}{\cdot,\cdot}$ es efectivamente una distancia en un sub-espacio específico de $\probmeasure{\xspace}$:
+
+\begin{teo}[$\wasserstein{p}{\cdot,\cdot}$ es distancia]
+
+	Sea $\probmeasurep{\xspace}$ el espacio de medidas de probabilidad en $\xspace$ con el $p$-ésimo momento\footnote{Los momentos de una medida de probabilidad $\mu\in\probmeasure{\xspace}$ son los momentos de una variable aleatoria cuya ley es $\mu$.} finito:
+
+	\begin{equation}
+		\probmeasurep{\xspace} := \left\{\mu\in\probmeasure{\xspace}\,:\, \int_\xspace d(x_0,x)^p \d\mu < \infty, \quad\forall x_0\in\xspace\right\}
+	\end{equation}
+
+	Entonces, la función $\wasserstein{p}{\cdot,\cdot}$ define una distancia en $\probmeasurep{\xspace}$ y el espacio métrico $\parent{\probmeasurep{\xspace},\mathcal{W}_p}$ se denomina \textit{espacio de Wasserstein}.
+\end{teo}
+
+El caso $p=\infty$ (visto como un límite puntual de funciones) también es una distancia, pero el problema de Kantorovich asociado es no convexo, lo que dificulta el cálculo de esta distancia. Además, si $p\in[0,1]$, entonces $d^p$ por si solo es distancia, por lo que $\wasserstein{p}{\cdot,\cdot}^p$ es distancia en $\probmeasurep{\xspace}$. Sin embargo, no se considerará ninguno de estos casos en este trabajo.
+
+Para otras funciones de costo, la función $\wasserstein{p}{\cdot,\cdot}$ no necesariamente es una distancia ya que, por lo general, no es posible demostrar la desigualdad triangular.
+
+Por otro lado, si bien se verá que la distancia de Wasserstein tiene muy buenas propiedades, sigue siendo un problema costoso de resolver, por lo que se siguen usando funciones de discrepancias más sencillas como la divergencia de Kullback-Leibler que, si bien no son tan robustas con la distancia de Wasserstein, si son fáciles de computar. Sin embargo, en el \autoref{eot_sbp} se verá un algoritmo que permite aproximar una solución del problema de Kantorovich de forma eficiente, lo que le ha concedido un gran interés al transporte óptimo dentro del aprendizaje de máquinas en los últimos años.
+
+\subsubsection{Casos particulares}
+
+Si bien el problema de Kantorovich dado en \eqref{eq:kantorovich_continuous} puede ser complejo de resolver, hay casos donde se conoce la solución de forma explícita, pudiendo calcular la distancia entre distribuciones de forma cerrada. En esta subsección se verá que tanto la distancia de Wasserstein como el mapa de Kantorovich asociado se pueden escribir de forma explícita para medidas en $\R$. Además, se verá que las distribuciones gaussianas en $\R^d$ también tienen forma cerrada para su transporte óptimo.
+
+\paragraph{Transporte óptimo en \texorpdfstring{$\R$}{R}}
+
+Para entregar la solución al problema de Kantorovich en $\R$ es necesaria la siguiente definición:
+
+\begin{defn}[función de distribución acumulada]
+
+	Dada una medida de probabilidad real $\mu\in\probmeasure{\R}$, su función de distribución acumulada $F_\mu:\R\to[0,1]$ se define como:
+
+	\begin{equation}
+		F_\mu(x) := \int_{-\infty}^x \d\mu
+	\end{equation}
+
+\end{defn}
+
+Notando que $\mu\parent{(a, b]} = F_\mu(b) - F_\mu(a)$, se tiene que $F_\mu$ determina el valor de $\mu$ en una semi-álgebra de $\R$, por lo que la función de distribución acumulada identifica totalmente a la medida de probabilidad $\mu$\footnote{Recordar que la extensión de Carathéodory es única en espacios de medida $\sigma$-finitos, en particular en espacios de probabilidad.}.
+
+El siguiente teorema entrega la solución para el problema de Kantorovich entre dos medidas de probabilidad en $\R$:
+
+\begin{teo}[plan de transporte óptimo en $\R$]
+	\label{teo:kantorovich_r}
+	Sean $\mu,\nu\in\probmeasure{\R}$ medidas de probabilidad con funciones de distribución acumulada $F_\mu$ y $F_\nu$ respectivamente. Entonces, el plan de Kantorovich $\pi^*\in\Pi(\mu,\nu)$ para el problema de Kantorovich entre $\mu$ y $\nu$ con función de costo $c(x,y)=|x-y|$ tiene la siguiente función de distribución acumulada:
+
+	\begin{equation}
+		F_{\pi^*}(x,y) = \inf \{F_\mu(x),F_\nu(y)\}
+	\end{equation}
+
+	Además, el valor óptimo del problema de Kantorovich es la distancia $L^1(\R)$ entre las funciones de distribución acumulada de $\mu$ y $\nu$:
+
+	\begin{equation}
+		\wasserstein{1}{\mu,\nu} =
+		\int_{-\infty}^\infty \left|F_\mu(x)-F_\nu(x)\right| \d x
+	\end{equation}
+\end{teo}
+
+Las demostración de este resultado se pueden consultar en \cite{Thorpe2018}.
+
+\paragraph{Distancia de Fréchet entre distribuciones gaussianas}
+
+Otro caso donde se puede encontrar una solución de forma cerrada ocurre cuando se consideran las leyes de dos distribuciones gaussianas con la distancia de Wasserstein $\mathcal{W}_2$:
+
+\begin{teo}[Distancia de Fréchet entre dos gaussianas]
+	\label{teo:frechet_gaussian}
+	Dadas dos variables aleatorias gaussianas, $x\sim\gaussian{\mu_1}{\Sigma_1}$ e $y\sim \gaussian{\mu_2}{\Sigma_2}$, si se considera $\mu=\ley{x}$ y $\nu=\ley{y}$ las respectivas medidas asociadas a $x$ e $y$ respectivamente\footnote{Para una variable aleatoria $x\sim p(x)$, su ley es la medida $\mu_x(A)=\int_A p(x)\d x$}, entonces:
+
+	\begin{equation}
+		\wasserstein{2}{\mu,\nu} = \norm{\mu_1-\mu_2}_2^2 + \trace{\Sigma_1+\Sigma_2 - 2\left(\Sigma_1^\frac{1}{2}\Sigma_2\Sigma_1^\frac{1}{2}\right)^\frac{1}{2}}
+	\end{equation}
+
+	Además, el mapa de Monge $T:\R^d\to\R^d$ viene dado por
+
+	\begin{equation*}
+		T(x) = \mu_2 + A(x - \mu_1),
+		\quad\text{donde}\quad
+		A = \Sigma_1^{-1/2}\left(\Sigma_1^{1/2} \Sigma_2 \Sigma_1^{1/2}\right)^{1/2}\Sigma_1^{-1/2}
+	\end{equation*}
+\end{teo}
+
+Una demostración de esta propiedad se puede encontrar en \cite{peyré2020computational}. Notar que en este caso se entrega de forma explícita el mapa de Monge para el problema de transporte óptimo, el cual se sabe que existe gracias al \autoref{teo:brenier}. Además, es importante notar que $\Sigma_1$ y $\Sigma_2$ son matrices de covarianzas, por lo que deben ser simétricas y definidas positivas (asumiendo que $x$ e $y$ son variables aleatorias gaussianas no degeneradas). De este modo, la descomposición de Cholesky garantiza que sus raíces cuadradas están bien definidas y, por lo tanto, la matriz $A$ está bien definida.
+
+Por otra parte la matriz $A$ puede ser interpretada como una transformación lineal. De esta forma, el operador $T$ es un operador afín que primero traslada las masas de $x\sim \gaussian{\mu_1}{\Sigma_1}$ al origen mediante $x-\mu_1$ y luego aplica la transformación lineal. Finalmente $T$ realiza una traslación al centro de $\gaussian{\mu_2}{\Sigma_2}$.
+
+La transformación $x\mapsto Ax$ busca deformar la distribución $x\sim \gaussian{\mu_1}{\Sigma_1}$ para hacerla similar a la distribución $\gaussian{\mu_2}{\Sigma_2}$. Esto se vuelve evidente cuando $d=1$ ya que en ese caso $A=\frac{\sigma_2}{\sigma_1} \in\mathbb{R}_+$ es la raiz cuadrada del ratio entre ambas varianzas.
+
+Por último, es importante recordar que la distancia de Fréchet entre gaussianas es utilizada en la métrica FID al momento de evaluar algunos modelos generativos como DDPM.
+
+\subsubsection{Topologías en \texorpdfstring{$\probmeasure{\xspace}$}{el espacio de medidas de probabilidad}}
+
+Dado un espacio medible $(\xspace,\salgebra)$, es posible inducir una topología\footnote{Ver la topología de un espacio como una noción de convergencia en dicho espacio. Por ejemplo, la topología usual de $\R$ indica que una sucesión $(x_n)_{n\in\N}$ converge a $x\in\R$ si y solo si $|x_n-x|\to 0$.} sobre el conjunto de medidas de probabilidad, $\probmeasure{\xspace}$, sin tener necesariamente una estructura topológica en $\xspace$. En general, se suele utilizar la topología inducida por la distancia en variación total (ver \autoref{defn:tv}), pero es posible considerar otra noción de convergencia cuando $\xspace$ tiene además una estructura métrica:
+
+\begin{defn}[Convergencia débil de medidas]
+	\label{def:measure_weak_convergence}
+	Dado un espacio métrico $(\xspace,d)$, se dirá que una sucesión de medidas de probabilidad $(\mu_n)_{n\in\N}\subset\posmeasure{\xspace}$ converge débilmente a la medida $\mu\in\posmeasure{\xspace}$ si:
+
+	\begin{equation}
+		\int_\xspace f d\mu_n \to \int_\xspace f d\mu,\quad\forall f\in\continuousb{\xspace}
+	\end{equation}
+
+	donde $\continuousb{\xspace}$ es el espacio de las funciones continuas y acotadas. Esta convergencia se denotará $\mu_n\weak\mu$.
+\end{defn}
+
+Para dar un ejemplo de esta noción de convergencia, se puede considerar una sucesión de medidas puntuales $(\delta_{x_n})_{n\in\N}\subset\probmeasure{\R}$ donde la secuencia de puntos $(x_n)_{n\in\N}\subset{\R}$ converge a un punto límite $\bar x\in\R$. En consecuencia, uno esperaría, naturalmente, que la sucesión de medidas también converga a la medida límite $\delta_{\bar x}$. Se verá que esto sí ocurre cuando se considera la noción de convergencia dada por la convergencia débil. En efecto, dada una función $f\in\continuousb{\R}$, se tiene que
+
+\begin{equation}
+	\int_\R f \d\delta_{x_n} = f(x_n)
+	\quad\text{y}\quad
+	\int_\R f \d\delta_{\bar x} = f(\bar x)
+\end{equation}
+
+Por otra parte, como $f:\R\to\R$ es continua, $f(x_n)\to f(\bar x)$, por lo que efectivamente $\delta_{x_n} \weak \delta_{\bar x}$.
+
+El teorema de Portmanteau entrega diferentes caracterizaciones para esta definición, en particular, la definición no cambia al considerar $f$ en el conjunto de las funciones Lipschitz acotadas en vez de $\continuousb{\xspace}$. Por otra parte, una medida $\mu\in\posmeasure{\xspace}$ puede verse como un elemento del dual topológico de $\continuousb{\xspace}$ a través del funcional lineal y continuo
+
+\begin{equation}
+	f\in\continuousb{\xspace}\mapsto \int_\xspace f\, d\mu \in\R
+\end{equation}
+
+Con esta observación, $\posmeasure{\xspace}\subset\continuousb{\xspace}^*$ vía la identificación anterior, y la convergencia débil en $\posmeasure{\xspace}$ es equivalente a la convergencia débil-* en $\continuousb{\xspace}^*$. Si bien la topología débil-* no es metrizable en general, su restricción al espacio $\posmeasure{\xspace}$ sí lo es. En la \autoref{ot/dynamic/wasserstein} se entrega una distancia compatible con esta convergencia a partir de un problema de transporte óptimo.
+
+En esta subsección se estudiará la topología que induce la distancia de Wasserstein en $\probmeasurep{\xspace}$. En particular, se verá que esta distancia metriza la topología de la convergencia débil de medidas cuando $\xspace$ es compacto (ver \autoref{def:measure_weak_convergence}):
+
+\begin{teo}[Convergencia con la distancia de Wasserstein]
+	Dada una sucesión de medidas de probabilidad con $p$-ésimo momento finito, $(\mu_n)_{n\in\N}\subset\probmeasurep{\xspace}$, y un candidato a límite $\mu\in\probmeasurep{\xspace}$, se tiene que:
+
+	\begin{equation}
+		\wasserstein{p}{\mu_k, \mu} \to 0 \iff \parent{\mu_n \weak \mu} \wedge \parent{\int_\xspace d(x_0,x)^p \d\mu_n \to \int_\xspace d(x_0,x)^p \d\mu, \quad\forall x_0\in\xspace}
+	\end{equation}
+\end{teo}
+
+Notar que si $\xspace$ es compacto, los $p$-momentos son siempre finitos. En efecto, si $\mu\in\probmeasure{\xspace}$ con $\xspace$ compacto:
+
+\begin{equation}
+	\int_\xspace d(x_0,x)^p \d\mu \leq \int_\xspace \parent{\max_{x\in\xspace}d(x_0,x)^p} \d\mu = \mu(\xspace)\cdot \max_{x\in\xspace}d(x_0,x)^p < \infty
+\end{equation}
+
+por lo que $\probmeasurep{\xspace} = \probmeasure{\xspace}$. Además, si $\xspace$ es compacto, la convergencia débil de medidas implica la convergencia de sus $p$-momentos, por lo que $\wasserstein{p}{\cdot,\cdot}$ metriza totalmente la convergencia débil de medidas en $\probmeasure{\xspace}$ cuando $\xspace$ es compacto:
+
+\begin{cor}[caracterización de la convergencia débil]
+	Sea $\xspace$ un espacio métrico compacto. Dada una sucesión de medidas de probabilidad con $p$-ésimo momento finito, $(\mu_n)_{n\in\N}\subset\probmeasurep{\xspace}$, y un candidato a límite $\mu\in\probmeasurep{\xspace}$, se tiene que:
+
+	\begin{equation}
+		\wasserstein{p}{\mu_k, \mu} \to 0 \iff \mu_n \weak \mu
+	\end{equation}
+\end{cor}
+
+Por otra parte, la compacidad de $\xspace$ implica que todas las distancias de Wasserstein son equivalentes entre sí:
+
+\begin{prop}[equivalencia de las distancias de Wasserstein]
+	Sean $\mu,\nu\in\probmeasurep{\xspace}$ con $p\in[1,\infty)$, entonces:
+
+	\begin{equation}
+		\wasserstein{p}{\mu,\nu} \geq \wasserstein{1}{\mu,\nu}
+	\end{equation}
+
+	Además, si $\xspace$ es compacto, existe una constante $c>0$ independiente de $\mu$ y $\nu$ tal que
+
+	\begin{equation}
+		\wasserstein{p}{\mu,\nu}^p \leq c\cdot\wasserstein{1}{\mu,\nu}
+	\end{equation}
+\end{prop}
+
+\subsubsection{Comparación con otras funciones de pérdida}
+
+En este apartado se comparará la distancia que induce el problema de Kantorovich con otras funciones de comparación utilizadas en el aprendizaje de máquinas. En particular, se definirá el concepto de $f$-divergencia, el cual permite construir una familia de operadores para poder comparar fácilmente dos medidas, donde la divergencia de Kullback-Leibler es una de las $f$-divergencia más utilizadas en el aprendizaje automático.
+
+Antes de dar la definición, es necesario entregar el siguiente resultado, el cual afirma que una medida de probabilidad se puede descomponer en una parte absolutamente continua y una parte singular con respecto a otra medida de base:
+
+\begin{teo}[descomposición de Lebesgue]
+	Dadas dos medidas de probabilidad, $\mu,\nu\in\probmeasure{\xspace}$, entonces existen dos medidas $\mu^{\text{a.c.}(\nu)},\mu^{\perp(\nu)}\in\probmeasure{\xspace}$ tales que:
+
+	\begin{itemize}
+		\item $\mu = \mu^{\text{a.c.}(\nu)} + \mu^{\perp(\nu)}$.
+		\item $\mu^{\text{a.c.}(\nu)} \ll \nu$ (i.e., $\mu^{\text{a.c.}(\nu)}$ tiene densidad con respecto a $\nu$).
+		\item $\mu^{\perp(\nu)} \perp \nu$ (i.e., $\mu^{\perp(\nu)}$ y $\nu$ tienen soporte disjunto).
+	\end{itemize}
+\end{teo}
+
+Con esta descomposición, las $f$-divergencias comparan dos medidas $\mu,\nu\in\probmeasure{\xspace}$ mediante la derivada de Radon-Nikodym en la parte absolutamente continua y penalizando el tamaño de la parte singular de $\mu$:
+
+\begin{defn}[$f$-divergencia]
+	\label{defn:f_div}
+	Sea $f:\R_+\to\R$ una función continua\footnote{En general, se suele definir como una función semi-continua inferior, pero se relajará la definición ya que no será necesario en este trabajo.}, convexa y tal que $f(1)=0$. Entonces, para dos medidas $\mu,\nu\in\probmeasure{\xspace}$ se define su $f$-divergencia o divergencia de Csiszár como
+
+	\begin{equation}
+		\label{eq:f_div}
+		\fdiv{\mu}{\nu}
+		:= \int_\xspace f\parent{\frac{d\mu^{\text{a.c.}(\nu)}}{d\nu}} \d\nu + f'_\infty\, \mu^{\perp(\nu)}(\xspace)
+	\end{equation}
+
+	donde $f'_\infty = \lim_{x\to\infty} \frac{f(x)}{x}$ es la velocidad límite de $f$.
+\end{defn}
+
+En esta definición, la exigencia $f(1)=0$ muestra que si $\frac{d\mu^{\text{a.c.}(\nu)}}{d\nu} = 1$ (i.e., ambas medidas son equivalentes en la parte absolutamente continua), entonces el primer sumando es nulo. Por otra parte, el término $\mu^{\perp(\nu)}(\xspace)$ busca aumentar la divergencia cuando la parte singular de $\mu$ es muy grande, mientras que el factor $f'_\infty$ (no necesariamente finito) está definido de esta forma para que la divergencia $\fdiv{\cdot}{\cdot}$ sea continua\footnote{Recordar que la continuidad es una propiedad deseable cuando se quiere maximizar o minimizar una función.} (para la topología débil de medidas). Para hacer clara la definición anterior, se entrega su versión discreta:
+
+\begin{defn}[$f$-divergencia, caso discreto]
+	\label{defn:f_div_discrete}
+	Dado un conjunto discreto $\xspace=\{x_i\}_{i=1}^n$ y $f:\R_+\to\R$ una función continua, convexa y tal que $f(1)=0$. Entonces, para dos medidas $\mu,\nu\in\probmeasure{\xspace}$ con vectores de probabilidad $a,b\in\Sigma_n$ respectivamente, se define su $f$-divergencia o divergencia de Csiszár como
+
+	\begin{equation}
+		\fdiv{\mu}{\nu}
+		:= \sum_{i:\, x_i\in\supp{\nu}} f\parent{\frac{a_i}{b_i}}\, b_i + f'_\infty\sum_{i:\, x_i\not\in\supp{\nu}} a_i
+	\end{equation}
+
+	donde $f'_\infty = \lim_{x\to\infty} \frac{f(x)}{x}$ es la velocidad límite de $f$.
+\end{defn}
+
+Una $f$-divergencia natural\footnote{Esta divergencia se puede considerar natural ya que $f(x) = |x-1|$ es la función más simple que cumple las propiedades pedidas.} es la que está asociada a $f(x) = |x-1|$. Esta divergencia resultará ser, al igual que el problema de Kantorovich, una métrica en $\probmeasure{\xspace}$ denominada \textit{distancia en variación total}:
+
+\begin{defn}[variación total]
+	\label{defn:tv}
+	\begin{equation}
+		\tv{\mu}{\nu} := \int_\xspace \left|\frac{d\mu^{\text{a.c.}(\nu)}}{d\nu} - 1 \right| \d\nu + \mu^{\perp(\nu)}(\xspace)
+	\end{equation}
+\end{defn}
+
+A pesar de que su definición es poco clara, esta divergencia puede escribirse de forma sencilla en algunos casos. En efecto, cuando $\mu$ y $\nu$ son medidas discretas con vectores de probabilidad $a,b\in\Sigma_n$ respectivamente:
+
+\begin{align}
+	\tv{\mu}{\nu} & = \sum_{i:\, x_i\in\supp{\nu}} \left|\frac{a_i}{b_i} - 1\right|\, b_i + \sum_{i:\, x_i\not\in\supp{\nu}} a_i \\
+	              & = \sum_{i:\, x_i\in\supp{\nu}} |a_i - b_i| + \sum_{i:\, x_i\not\in\supp{\nu}} |a_i - 0|                      \\
+	              & = \sum_{i=1}^n |a_i - b_i|
+\end{align}
+
+donde se identifica que $\tv{\mu}{\nu}$ es precisamente la distancia $l^1$ de los vectores de probabilidad. Esta propiedad puede extenderse naturalmente al continuo si las medidas $\mu$ y $\nu$ tienen densidades con respecto a la medida de Lebesgue. En efecto, si las densidades son $p_\mu$ y $p_\nu$ respectivamente, se demuestra de forma análoga que la distancia en variación total entre $\mu$ y $\nu$ corresponde a la distancia $L^1$ de sus funciones de densidad:
+
+\begin{equation}
+	\tv{\mu}{\nu} = \int_\xspace |p_\mu - p_\nu| \d x
+\end{equation}
+
+Esta última propiedad sugiere que la divergencia en variación total es una distancia entre medidas de probabilidad. Más aún, notando que $\tv{\mu}{\nu}$ se define como la norma $L^1$ (o $l^1$ en el caso discreto) de una diferencia, se puede demostrar que la distancia $d_{\operatorname{TV}}(\mu,\nu) := \tv{\mu}{\nu}$ proviene realmente de una norma: $d_{\operatorname{TV}}(\mu,\nu) = \norm{\mu-\nu}_{\operatorname{TV}}$, la cual está definida como $\norm{\mu}_{\operatorname{TV}} := |\mu|(\xspace)$ en el espacio vectorial de todas las medidas finitas (no necesariamente de probabilidad), tanto positivas como negativas.
+
+\begin{prop}
+	La distancia en variación total, $d_{\operatorname{TV}}(\mu,\nu) := \tv{\mu}{\nu}$, no es una distancia compatible con la convergencia débil en $\probmeasure{\xspace}$. Más aún, si $\xspace$ es acotado, esta distancia es más fuerte que la distancia de Wasserstein $\wasserstein{1}{\mu,\nu}$:
+
+	\begin{equation}
+		\wasserstein{1}{\mu,\nu} \leq k\cdot d_{\operatorname{TV}}(\mu,\nu)
+	\end{equation}
+
+	donde $k>0$ es una constante que depende únicamente de $\xspace$.
+\end{prop}
+
+La proposición anterior permite concluir que la convergencia en variación total es más fuerte que la convergencia débil. Es decir, si una sucesión de medidas $(\mu_n)_{n\in\N}\subset\probmeasure{\xspace}$ converge a $\mu\in\probmeasure{\xspace}$ en variación total (i.e., $d_{\operatorname{TV}}(\mu_n,\mu)\to 0$), entonces también converge débilmente (i.e., $\wasserstein{1}{\mu_n,\mu}\to 0$). Por otra parte, para ver que la distancia en variación total no es compatible con la convergencia débil, se puede considerar la sucesión de medidas $(\delta_{x_n})_{n\in\N}\subset\probmeasure{\R}$, la cual se probó que converge débilmente a $\delta_{\bar x}$ cuando $x_n\to\bar x$. Sin embargo, esta convergencia no es cierta en variación total. En efecto, $\delta_{x_n}$ y $\delta_{\bar x}$ son medidas singulares (tienen soporte disjunto) por lo que la densidad en la \eqref{eq:f_div} es nula mientras que la parte singular de $\delta_{x_n}$ es todo $\delta_{x_n}$, luego:
+
+\begin{equation}
+	d_{\operatorname{TV}}(\delta_{x_n},\delta_{\bar x})
+	= \tv{\delta_{x_n}}{\delta_{\bar x}}
+	= \int_\R |0 - 1| \d\delta_{\bar x} + \delta_{x_n}(\R)
+	= 1 + 1 > 0
+\end{equation}
+
+Por lo que, efectivamente, $\delta_{x_n}$ no converge a $\delta_{\bar x}$ bajo esta noción de convergencia. El hecho de que la convergencia en variación total sea más fuerte que la convergencia débil muchas veces es una mala propiedad ya que bajo esta nueva noción de convergencia, son menos las sucesiones que convergen, lo cual suele ser necesario para probar resultados de existencia de soluciones en problemas de optimización.
+
+Por otra parte, tanto en la \autoref{defn:f_div} como en la \autoref{defn:f_div_discrete} se puede observar la similitud de las $f$-divergencias con la divergencia de Kullback-Leibler usada en los modelos de difusión donde, por simplicidad, se asume que las medidas de probabilidad son absolutamente continuas con respecto a la medida de Lebesgue para poder trabajar directamente con densidades de probabilidad (ver \autoref{defn:kl_ac}). En realidad, es directo ver que la divergencia de Kullback-Leibler es efectivamente una $f$-divergencia cuando se considera a $f$ como la entropía de Shannon $f(x)=x\cdot\log(x)$. Notar que para este caso, $f'_\infty = \lim_{x\to\infty} \log(x) = \infty$, por lo que la divergencia de Kullback-Leibler siempre será $\infty$ si $\mu$ no tiene densidad con respecto a $\nu$. En particular, $\KL{\delta_x}{\delta_y}=\infty$ si $x\neq y$, por lo que esta divergencia tampoco puede ser compatible con la convergencia débil de medidas. Más aún, se puede demostrar que ninguna $f$-divergencia es capaz de metrizar la convergencia débil debido a que, a diferencia de la distancia de Wasserstein, las $f$ divergencias no son capaces de acceder a la geometría del espacio subyacente.
+
+\subsubsection{Geodésicas en los espacios de Wasserstein}
+
+En esta sección se enunciará un resultado que afirma que el sub-espacio $\probmeasurep{\xspace}$ es un espacio geodésico cuando se dota de la métrica de Wasserstein $\wasserstein{p}{\cdot,\cdot}$. Es decir, es posible trazar curvas de largo mínimo que conecten dos medidas de probabilidad $\mu,\nu\in\probmeasurep{\xspace}$. Se comenzará dando algunas definiciones necesarias para este resultado:
+
+\begin{defn}[largo de una curva]
+	Sea $(\xspace,d)$ un espacio métrico. Se define el largo de una curva $w:[0,1]\to\xspace$ en $\xspace$ como:
+
+	\begin{equation}
+		\operatorname{Largo}(w) := \sup_{(t_k)_{k=0}^n \in\mathcal{R}([0,1])} \sum_{k=1}^n d\parent{w(t_k), w(t_{k-1})}
+	\end{equation}
+
+	donde $\mathcal{R}([0,1])$ es el conjunto de particiones finitas del intervalo $[0,1]$.
+\end{defn}
+
+\begin{defn}[continuidad absoluta de funciones]
+	\label{defn:absolute_continuity_functions}
+	\pendiente{escribir.}
+\end{defn}
+
+Notar el alcance de nombre con la definición de continuidad absoluta para medidas dada en \autoref{defn:absolute_continuity_measures}. Se puede probar que ambas definiciones están relacionadas: una medida $\mu\in\probmeasure{\R^d}$ es absolutamente continua (en el sentido de la \autoref{defn:absolute_continuity_measures}) si su función de distribución acumulada $x\in\R\mapsto \mu\parent{(-\infty,x]}\in[0,1]$ es una función absolutamente continua (en el sentido de la \autoref{defn:absolute_continuity_functions}).
+
+Con esto, un espacio métrico se dirá que es un espacio geodésico si es posible encontrar una curva de largo mínimo que conecte dos puntos arbitrarios del espacio:
+
+\begin{defn}[espacio geodésico]
+	Un espacio métrico $(\xspace,d)$ es un espacio geodésico si
+
+	\begin{equation}
+		d(x,y) = \min \left\{\operatorname{Largo}(w)\,:\, w\in\operatorname{AC}(\xspace),\, w(0)=x \wedge w(1)=y\right\}
+	\end{equation}
+
+	donde $\operatorname{AC}(\xspace)$ es el conjunto de las funciones absolutamente continuas. En este caso, las curvas $w\in\operatorname{AC}(\xspace)$ que minimicen la expresión anterior se denominan geodésicas entre $x$ e $y$. Estas geodésicas se dirán de velocidad constante si adicionalmente se cumple que
+
+	\begin{equation}
+		d\parent{w(t_0),w(t_1)} = |t_1-t_0| \cdot d\parent{w(0),w(1)}
+	\end{equation}
+\end{defn}
+
+El siguiente resultado afirma que el espacio de Wasserstein es un espacio geodésico cuando $\xspace$ es convexo (en particular, $\xspace=\R^d$ cumple esta propiedad):
+
+\begin{teo}[$\probmeasurep{\xspace}$ es un espacio geodésico]
+	\label{teo:wasserstein_geodesic}
+	Sea $\xspace$ espacio métrico convexo. Entonces, el espacio de Wasserstein $\parent{\probmeasurep{\xspace}, \mathcal{W}_p}$ es un espacio geodésico. Más aún, si $\mu,\nu\in\probmeasurep{\xspace}$ son medidas de probabilidad con $\bar\pi\in\Pi(\mu,\nu)$ el plan óptimo de Kantorovich entre ellas, la función de interpolación convexa $P_t:\xspace\times\xspace\to\xspace$ definida como $P_t(x,y) = (1-t)x + ty$ permite definir una curva geodésica a velocidad constante entre $x$ e $y$:
+
+	\begin{equation}
+		t\in[0,1] \mapsto \mu_t = (P_t)_\#\pi \in\probmeasurep{\xspace}
+	\end{equation}
+\end{teo}
+
+\paragraph{Interpolación de desplazamiento}
+
+Este último resultado entrega una forma natural de interpolar entre dos medidas de probabilidad. En efecto, si $T^*$ es mapa de Monge del problema \eqref{eq:monge_continuous}, se puede construir la interpolación de McCann entre $\mu$ y $\nu$ como $\mu_t = (T_t)_\#\mu$, donde
+$T_t = (1-t)\operatorname{Id} + t T^*$ es la interpolación convexa entre la función identidad $\operatorname{Id}(x)=x$ y el mapa de Monge $T^*$. Esta interpolación ocurre en el espacio de las medidas de probabilidad y, por lo general, es una interpolación más realista que la interpolación euclidiana $\mu_t = (1-t)\mu + t\nu$ al ser una interpolación a través de una curva geodésica (ver \autoref{fig:ot/geodesic_wasserstein}).
+
+\insertimage{ot/geodesic_wasserstein}{0.7}{Interpolación en el espacio de Wasserstein (izquierda) y en el espacio de las muestras (derecha). Se observa interpolando en el espacio de Wasserstein se obtienen geodésicas más naturales que al hacerlo en el espacio observable.}
+
+\subsection{Formulación de Benamou-Brenier}
+\label{ot/dynamic/benamou_brenier}
+
+Si bien el problema de Kantorovich tiene buenas propiedades tanto matemáticas como prácticas, la naturaleza de su formulación es totalmente estática ya que los mapas de transporte $T:\xspace\to\yspace$ solo indican una asignación de transporte pero no entregan la trayectoria que deben seguir los elementos de $\xspace$ para llegar a $\yspace$. Si bien la interpolación de McCann permite este dinamismo gracias a las propiedades geodésicas del espacio de Wasserstein, es posible reformular el problema de transporte como un problema dinámico en el cual la masa se transporta desde un conjunto a otro mediante un campo vectorial.
+
+Bajo este nuevo enfoque, el problema de transporte óptimo se plantea como un problema de fluidodinámica donde una medida es transportada de un lugar a otro mediante un campo de velocidades que preserva la masa en todo instante del trayecto y que, además, al comienzo y al final del recorrido la masa está distribuida de la forma que exige el problema de transporte óptimo. Para entregar esta formulación, es necesario plantear una restricción de preservación de masa, la cual será crucial en la mayor parte de las formulaciones dinámicas del transporte óptimo, tanto en su versión original como en su versión regularizada.
+
+\subsubsection{Ecuación de transporte}
+
+Dado un fluido inmerso en $\R^d$ y guiado por un campo de velocidades dinámico en el tiempo, $v:\R^d\times[0,T]\to\R^d$, la ecuación de transporte es una PDE que codifica la conservación de la masa del fluido a lo largo de su recorrido a través del campo vectorial $v$. Para derivar esta ecuación, es necesario el siguiente resultado clásico de cálculo vectorial:
+
+\begin{teo}[divergencia de Gauss]
+	\label{teo:gauss}
+	Sea $\Omega\subset\R^d$ un volumen cerrado y acotado con frontera $\partial\Omega$. Entonces, para un campo vectorial $\vec{F}:\R^d\to\R^d$ continuamente diferenciable, se tiene que:
+
+	\begin{equation}
+		\oint_{\partial\Omega} \vec{F} \cdot \d \vec{S}
+		= \int_\Omega \nabla\cdot \vec{F} \d V
+	\end{equation}
+	
+	donde la primera integral es una integral de superficie mientras que la segunda integral es una integral estándar en $\R^d$. En esta última, $\nabla\cdot \vec{F}$ es la divergencia del campo $\vec{F} = (F_1,\ldots,F_d)$:
+
+	\begin{equation}
+		\nabla\cdot \vec{F} := \sum_{i=1}^d \frac{\partial F_i}{\partial x_i}
+	\end{equation}
+
+\end{teo}
+
+En la \autoref{fig:ot/vector_field} se puede obtener una intuición de este teorema: el flujo total que pasa a través de $\partial\Omega$ (definido por la integral de superficie) es precisamente la cantidad de fluido se está \textit{creando} o \textit{perdiendo} en cada punto del espacio dentro de $\Omega$ lo cual viene dado por el operador divergencia. De esta forma, sumando todas estas divergencias infinitesimales se obtiene el flujo neto a través de $\partial\Omega$. 
+
+\insertimage{ot/vector_field}{0.5}{campo vectorial $\vec{F}$ en $\R^3$ atravesando una superficie cerrada $\partial\Omega\subset\R^3$.}
+
+Teniendo este resultado, la derivación de la ecuación de conservación de masa es directa. En efecto, si se considera un fluido en $\R^d$ desplazándose en el espacio gracias a un campo de velocidades $v:\R^d\times[0,T]\to\R^d$, su densidad de masa será $\rho:\R^d\times[0,T]\to\R_+$, donde la dependencia en el tiempo es debido a los cambios locales de densidad provocados por el campo de velocidades. En efecto, la masa total en un volumen $\Omega\subset\R^d$ en el instante $t\in[0,T]$ es:
+
+\begin{equation}
+	\int_\Omega \rho(x,t) \d x
+\end{equation}
+
+En consecuencia, si la masa total se conserva, la tasa de cambio de la masa dentro del volumen $\Omega$ debe ser igual a la masa que sale de $\Omega$ a través de su superficie $\partial\Omega$, es decir:
+
+\begin{equation}
+	\frac{\partial}{\partial t}\parent{\int_\Omega \rho(x,t) \d x}
+	= - \oint_{\partial\Omega} \rho(x,t)\vec{F}(x,t) \d \vec{S}
+\end{equation}
+
+Por lo tanto, utilizando el \autoref{teo:gauss}:
+
+\begin{equation}
+	\frac{\partial}{\partial t}\parent{\int_\Omega \rho(x,t) \d x}
+	= - \int_\Omega \nabla\cdot\parent{\rho(x,t)v(x,t)} \d x
+	\implies
+	\int_\Omega \parent{\frac{\partial\rho}{\partial t}(x,t) + \nabla\cdot(\rho(x,t) v(x,t))} \d x = 0
+\end{equation}
+
+Luego, dado que el volumen de control $\Omega\subset\R^d$ es arbitrario, la igualdad anterior indica que
+
+\begin{equation}
+	\label{eq:transport_eq}
+	\frac{\partial\rho}{\partial t} + \nabla\cdot(\rho v) = 0
+\end{equation}
+
+Esta PDE se conoce como \textit{ecuación de transporte} o \textit{ecuación de continuidad} y es una ecuación fundamental tanto en la física como en la matemática ya que permite describir fenómenos que son conservados a lo largo del tiempo como la masa, la energía y la carga eléctrica. En este caso, la ecuación de transporte se está interpretando como una ecuación en fluidodinámica, donde forma parte de una de las ecuaciones de Euler para describir la dinámica que sigue un flujo a lo largo del tiempo. De esto se obtiene directamente que si el fluido es incompresible (i.e. la densidad $\rho$ es constante), la ecuación se reduce a $\nabla\cdot(v) = 0$, por lo que el campo de velocidades es solenoidal.
+
+\pendiente{comentar similitud con Fokker-Planck, necesario para formulación como control óptimo en versión entrópica.}
+
+Es importante notar que esta es una ecuación de conservación fuerte en el sentido que no solo conserva la masa total del sistema si no que también la conserva de manera local, no permitiendo la \textit{teleportación} de materia y forzando a que la trayectoria del fluido sea continua.
+
+\subsubsection{Formulación dinámica del transporte óptimo}
+
+Teniendo la ecuación de conservación de masa \eqref{eq:transport_eq}, es posible modelar el problema de transporte óptimo entre dos medidas en $\mu,\nu\in\probmeasure{\R^d}$ (con densidades $\rho_0$ y $\rho_1$ respectivamente) como la búsqueda de un campo de velocidades $v:\R^d\times[0,T]\to\R^d$ que haga evolucionar una función de densidad (desconocida) $\rho:\R^d\times[0,T]\to\R_+$ de tal forma que $\rho(\cdot,0)=\rho_0$ y $\rho(\cdot,1)=\rho_1$:
+
+\begin{equation}
+	\inf_{(\rho,v)} \int_0^1 \int_{\R^d} \norm{v(x,t)}^2 \rho(x,t) \d x\d t
+	\quad \text{sujeto a} \quad
+	\begin{cases}
+		\frac{\partial \rho}{\partial t} + \nabla\cdot(\rho v) = 0\\
+		\rho(\cdot,0) = \rho_0\\
+		\rho(\cdot,1) = \rho_1
+	\end{cases}
+\end{equation}
+
+\pendiente{agregar demostración corta de esto. Relación con interpolación de McCann.}
+
+\subsection{Interpretación como problema de control óptimo estocástico}
+\label{ot/dynamic/optimal_control}
+
+\pendiente{escribir.}
+
+\subsection{Modelos de difusión como mapa de transporte óptimo}
+\label{ot/dynamic/dm}
+
+Si bien los modelos de difusión a tiempo continuo estudiados en la \autoref{dm/continuous_dm} tienen una naturaleza estocástica, la \textit{probability flow ODE} \eqref{eq:probability_flow_dm} derivada a partir de la ecuación de Fokker-Planck del proceso de difusión permite tener un mapeo biunívoco entre la distribución inicial $\ptrue$ y la distribución final $\pprior$. Más aún, este mapeo puede verse como un encoder de la distribución $\ptrue$ donde $\pprior$ se interpreta como el espacio latente asociado. Más específicamente, si $x\ptrue$ es una muestra de la distribución inicial y $E_T(x)$ es la posición a la que llega $x$ al final del proceso de difusión (simulado hasta tiempo $T$), entonces $E_T(x)$ puede verse como una codificación de $x$ en el soporte de la distribución $\pprior$.
+
+Con esta simplificación a un mapeo determinista entre ambas distribuciones, es natural preguntarse si dicho mapa es un mapa de transporte óptimo entre las medidas asociadas a las densidades $\ptrue$ y $\pprior$ respectivamente. En \cite{khrulkov2022understandingddpmlatentcodes} estudian esta pregunta obteniendo resultados parciales positivos.
+
+En particular, para un modelo de difusión a tiempo continuo guiado por la VP-SDE \eqref{eq:ddpm_sde} (i.e., la SDE asociada a la formulación continua del modelo DDPM propuesto por \cite{ho2020denoising}), los autores de \cite{khrulkov2022understandingddpmlatentcodes} prueban empíricamente que cuando $T\to\infty$, el mapa $x\mapsto E_T(x)$ es (con un muy alto grado de precisión) similar al mapa de Monge\footnote{Notar que para este problema el mapa de Monge existe y está bien definido gracias al teorema de Brenier \autoref{teo:brenier}.} entre las distribuciones $\ptrue$ y $\pprior$. Más aún, cuando $\ptrue$ es una distribución gaussiana, los autores demuestran teóricamente que el mapa $E_\infty$ es efectivamente el mapa de Monge entre ambas distribuciones.
+
+Para mostrar este resultado de forma empírica, en el estudio se consideraron diferentes distribuciones de datos, incluyendo el dataset ImageNet, el cual se considera de alta dimensión desde el punto de vista del transporte óptimo. En todos los casos, los autores de \cite{khrulkov2022understandingddpmlatentcodes} lograron alcanzar una precisión a nivel de máquina, con un error relativo máximo del orden de $10^{-15}$, donde compararon el mapa de transporte inducido por el proceso de difusión con el mapa de Monge obtenido al resolver la ecuación de Fokker-Planck asociada al problema.
+
+Si bien este es un resultado al menos admirable, un trabajo posterior \cite{LAVENANT2022108225} construyó un contraejemplo donde la igualdad entre ambos mapas de transporte no se cumple. Más específicamente, construyeron un problema de transporte donde el mapa inducido por el modelo de difusión determinista difiere del mapa de Monge en un punto, mostrando que, o bien los modelos de difusión son solo una muy buena aproximación de los mapas de Monge, o bien se debe reducir el conjunto de distribuciones donde la igualdad es cierta. De todos modos, aunque los modelos de difusión (en su versión determinista) converjan al mapa de Monge, se sigue teniendo la limitación de tener que considerar un horizonte de tiempo infinito para obtener dicho mapa de transporte óptimo.
+
+Por otra parte, es importante aclarar que este trabajo propone únicamente que el mapa que induce el modelo de difusión aproxima al mapa de Monge entre dos distribuciones (donde la distribución de llegada es gaussiana), pero no afirma que la solución del proceso determinista \eqref{eq:probability_flow_dm} sea la solución de la formulación de Benamou-Brenier (ver \autoref{ot/dynamic/benamou_brenier}). Esto puede verse claramente en la \autoref{fig:ot/dm_ot} donde se observa que las trayectorias seguidas por las partículas son curvas y no rectas como es el caso de la formulación fluidodinámica.
+
+\insertimage{ot/dm_ot}{0.7}{Trayectorias seguidas por las muestras para dos distribuciones iniciales distintas cuando la distribución de llegada es una variable aleatoria gaussiana.}
+
+\pendiente{comentar que se está usando OT como método de guidance, nombrar Stable Diffusion 3.}
+
+\subsection{Limitaciones del transporte óptimo dinámico}
+
+Si bien la distancia que induce el problema de Kantorovich en $\probmeasure{\xspace}$ tiene buenas propiedades, esta métrica no ha sido muy utilizada en la comunidad del aprendizaje de máquinas ya que es computacionalmente cara y sufre de la maldición de la dimensionalidad. En efecto, cuando se busca aplicar el transporte óptimo a problemas de aprendizaje automático (p.g. como una función de pérdida), por lo general las medidas de probabilidad $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$ no son conocidas y solo se tiene acceso a una cantidad finita de muestras provenientes de estas medidas, por lo que se vuelve necesario aproximar la solución del problema de transporte óptimo. Sin embargo, como indica el siguiente teorema, esta aproximación se deteriora exponencialmente a medida que aumenta la dimensión de los datos:
+
+\begin{teo}[Dudley]
+	Sea $\xspace\subset\R^d$ compacto y $\mu,\nu\in\probmeasure{\xspace}$ dos medidas de probabilidad en este espacio. Para dos conjuntos de muestras independientes $(x_i)_{i=1}^n, (y_j)_{j=1}^n\subset\R^d$ con $x_i\sim\mu$ e $y_j\sim\nu$ para $i,j\in\{1,\ldots,n\}$, se pueden aproximar las medidas $\mu$ y $\nu$ mediante sus medidas empíricas
+
+	\begin{equation}
+		\hat{\mu} := \frac{1}{n} \sum_{i=1}^n \delta_{x_i}
+		\quad
+		\hat{\nu} := \frac{1}{n} \sum_{j=1}^n \delta_{y_j}
+	\end{equation}
+
+	Bajo esta aproximación, para $d>0$ y $p\in[1,\infty)$ se tiene el siguiente error para el estimador $\wasserstein{p}{\hat{\mu}, \hat{\nu}}$ de $\wasserstein{p}{\mu,\nu}$:
+
+	\begin{equation}
+		\E{(x_i,y_i)_{i=1}^n}{\left|\wasserstein{p}{\hat{\mu}, \hat{\nu}} - \wasserstein{p}{\mu,\nu} \right|} = \mathcal{O}(n^{-\frac{1}{d}})
+	\end{equation}
+\end{teo}
+
+Notar que en el teorema anterior, el estimador $\wasserstein{p}{\hat{\mu}, \hat{\nu}}$ es un estimador consistente ya que $\hat{mu}\weak \mu$ y $\hat{\nu}\weak\nu$, por lo que $\wasserstein{p}{\hat{\mu}, \hat{\nu}} \to \wasserstein{p}{\mu,\nu}$ (recordar que la distancia de Wasserstein es compatible con la convergencia débil).
+
+En consecuencia, si bien el problema de Kantorovich entrega buenas propiedades métricas que pueden resultar en una buena función de pérdida para usar en el aprendizaje automático, el hecho de que sufra de la maldición de la dimensionalidad ha provocado que se prefieran usar $f$-divergencias que, si bien no son capaces de accerder a la geometría del problema, sí son muy eficientes de computar.
+
+Con el fin de aminorar los problemas encontrados en el transporte óptimo, en el siguiente capítulo se estudiará una versión regularizada del problema de Kantorovich la cual entregará un problema estrictamente convexo, podrá ser resuelto de manera eficiente y, como se verá en la \autoref{eot_sbp/static_sbp}, resultará ser equivalente al problema del puente de Schrödinger estático. Además, la versión dinámica del problema de Schrödinger podrá ser vista como una versión ruidosa de la formulación de Benamou-Brenier donde la ecuación de continuidad \eqref{eq:transport_eq} será generalizada a una ecuación de Fokker-Planck (ver \autoref{dm/continuous_dm/sdes_introduction}).

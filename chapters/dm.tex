@@ -1,0 +1,1898 @@
+\chapter{Modelos de difusión}
+\label{dm}
+
+\section{Modelos generativos neuronales}
+\label{dm/generative_models}
+
+\pendiente{texto introductorio a los modelos generativos basados en redes neuronales.}
+
+\subsection{Redes generativas adversarias}
+\label{dm/generative_models/gans}
+
+Previo al uso de modelos de difusión, las redes generativas adversarias\footnote{También se les conoce como redes generativas adversativas o antagónicas} (GANs) constituyeron el estado del arte en modelos generativos para imágenes durante varios años.
+
+Inicialmente fueron propuestas por investigadores de la Universidad de Montreal en \cite{goodfellow2014generative}, donde proponen entrenar dos modelos independientes. Por un lado, un modelo generador $G$ busca aprender a generar muestras artificiales a partir de una cierta distribución $\ptrue$, engañando a otro modelo $D$ (discriminador) que busca discernir si una muestra de entrada corresponde a una muestra real proveniente de $\ptrue$ o una muestra artificial generada por $G$.
+
+\subsubsection{Formulación y convergencia}
+
+La descripción anterior afirma que modelo generativo que propone una GAN consta de dos partes:
+
+\begin{itemize}
+	\item $G_\theta$ es un modelo generativo de variable latente que transforma una distribución latente $z\sim p_z(z)$ en otra $g\sim p_g(g)$ mediante $z\mapsto G_\theta(z)$. Su objetivo es que $p_g\approx\ptrue$, por lo que puede ser comparado con el decoder de un VAE.
+	\item $D_\phi$ es un modelo discriminativo probabilista que para una cierta entrada $x$, $D_\phi(x)$ indica la probabilidad de que $x$ provenga de la distribución real de los datos. Es decir, si una muestra $x$ proviene de $\ptrue$ entonces $D_\phi(x)=1$, y si proviene de $p_g$, entonces $D_\phi(x)=0$. \end{itemize}
+
+Con esto, se tiene una única función objetivo asociada al rendimiento del modelo discriminador. Por un lado $D$ busca maximizar su nivel de predicción mientras que $G$ busca minimizarlo:
+
+\begin{equation}
+	\min_\theta\max_\phi C(G_\theta, D_\phi) := \E{x\sim\ptrue(x)}{\log D_\phi(x)} + \E{z\sim p_z(z)}{\log (1-D_\phi(G(z)))}
+	\label{eq:gan_objective}
+\end{equation}
+
+Los modelos $G_\theta$ y $D_\phi$ se entrenan de forma alternada, comenzando por el discriminador. Además, por motivos teóricos que se verán a continuación, el discriminador se entrena $K\geq 1$ veces por cada iteración del generador. El bucle de entrenamiento para una GAN genérica puede ser encontrado en el Algoritmo \ref{alg:gan_training}, mientras que una ilustración de su dinámica se puede encontrar en la \autoref{fig:dm/gan_training}.
+
+\begin{algorithm}
+	\caption{Entrenamiento de una GAN}
+	\begin{algorithmic}[1]
+		\State \textbf{Entrada:} número de pasos $K$ para entrenar el discriminador.
+		\While{no hay convergencia}
+		\For{$k = 1$ to $K$}
+		\State Obtener batch de entrenamiento $\{x_1,\ldots,x_m\}$ con $x_i\sim\ptrue(x_i)$.
+		\State Generar batch de latentes $\{z_1,\ldots,z_m\}$ con $z_i\sim p_z(z_i)$.
+		\State Realizar un paso del algoritmo de gradiente ascendente para el discriminador mediante el gradiente:
+
+		\begin{equation}
+			\nabla_\phi \frac{1}{m}\sum_{i=1}^m \left(\log D_\phi(x_i) + \log(1-D_\phi(G_\theta(z_i)))\right)
+		\end{equation}
+
+		\EndFor
+		\State Generar batch de latentes $\{z_1,\ldots,z_m\}$ con $z_i\sim p_z(z_i)$.
+		\State Realizar un paso del algoritmo de gradiente descendente para el generador mediante el gradiente:
+
+		\begin{equation}
+			\nabla_\theta \frac{1}{m}\sum_{i=1}^m \left( \log(1-D_\phi(G_\theta(z_i)))\right)
+		\end{equation}
+
+		\EndWhile
+	\end{algorithmic}
+	\label{alg:gan_training}
+\end{algorithm}
+
+\insertimage{dm/gan_training}{0.8}{Dinámica de entrenamiento de una GAN. La curva negra segmentada representa a $\ptrue$, la curva verde representa $p_g$ y la línea azul segmentada representa la distribución aprendida por el clasificador (Bernoulli continua). En (a) se tiene el estado actual de la GAN luego de algunas iteraciones (convergencia no alcanzada). En (b) se observa el estado de la GAN luego de entrenar el clasificador. En (c) se ve el término de la iteración al optimizar el generador. En (d) se observa la convergencia, donde $p_g$ es indistinguible de $\ptrue$ y el discriminador es una Bernoulli de máxima entropía. Imagen obtenida desde \cite{goodfellow2014generative}.}
+
+En \cite{goodfellow2014generative} muestran algunos resultados elementales acerca de la convergencia en las GANs. El primero de ellos afirma que, dado un generador fijo $G$, el discriminador óptimo tiene la forma esperada:
+
+\begin{prop}[discriminador óptimo]
+	Para un generador $G$ fijo, el discriminador óptimo $D^*_G$ viene dado por:
+
+	\begin{equation}
+		D^*_G(x) = \frac{\ptrue(x)}{\ptrue(x) + p_g(x)}
+	\end{equation}
+\end{prop}
+
+Por otra parte, asumiendo que siempre es posible obtener un discriminador óptimo $D_G^*$ para un generador $G$, el siguiente resultado afirma que el generador óptimo para \eqref{eq:gan_objective} se alcanza cuando $p_g=\ptrue$:
+
+\begin{prop}[generador óptimo]
+
+	Para una función objetivo $C(G):=C(G, D_G^*) = \max_\phi C(G, D_\phi)$, su mínimo global $G^*=\argmin_\theta C(G_\theta)$ es alcanzado si y solo si $p_g=\ptrue$. En este caso, $C(G^*)=-\log 4$.
+\end{prop}
+
+Estos resultados permiten concluir que al seguir el algoritmo dado en \ref{alg:gan_training}, la distribución $p_g$ asociada al generador converge a $\ptrue$:
+
+\begin{prop}[convergencia del algoritmo \ref{alg:gan_training}]
+	Si los modelos $G_theta$ y $D_\phi$ tienen suficiente capacidad y $K$ es lo suficientemente grande como para permitir que $D_\phi$ alcance su óptimo en cada iteración, entonces $p_g$ converge a $\ptrue$.
+\end{prop}
+
+En la demostración de la proposición anterior, es importante entrenar el discriminador hasta su convergencia, lo cual justifica la asimetría dada en el Algoritmo \ref{alg:gan_training}.
+
+\subsubsection{Generación condicional}
+
+El modelo descrito anteriormente es un modelo generativo que busca aprender la distribución no condicional $\ptrue$, por lo que no es posible controlar la generación. En \cite{mirza2014conditional} los autores proponen realizar un pequeño cambio a la arquitectura para ahora permitir generar muestras a partir de una distribución $\ptrue(x|y)$, donde $y$ ahora es una etiqueta o condición sobre los datos.
+
+Para conseguir esto, solo hace falta modificar la estructura de los modelos $G_\theta$ y $D_\phi$ para ahora permitir una entrada adicional $y$, de forma similar a la modificación realizada para los VAEs condicionales. Con esto, la nueva función objetivo es
+
+\begin{equation}
+	\min_\theta\max_\phi C(G_\theta, D_\phi) := \E{x\sim\ptrue(x)}{\log D_\phi(x|y)} + \E{z\sim p_z(z)}{\log (1-D_\phi(G(z|y)))}
+	\label{eq:cgan_objective}
+\end{equation}
+
+\subsubsection{Limitaciones de las GANs}
+
+Uno de los problemas más conocidos en las GANs es que poseen un entrenamiento altamente inestable, dependiendo fuertemente de la arquitectura, hiperparámetros y datos utilizados durante el entrenamiento. Con el fin de aminorar la inestabilidad provocada por la arquitectura, los autores de \cite{radford2016unsupervised} proponen algunas reglas generales para la construcción de una arquitectura para GANs, denominada DCGAN (deep convolutional GAN). Las sugerencias que realizan son las siguientes:
+
+\begin{itemize}
+	\item Los autores encontraron que las capas de global average pooling estabilizan el entrenamiento pero la convergencia se vuelve más lenta. Debido a esto, proponen sustituir las capas de pooling por capas convolucionales con stride en el encoder y por capas convolucionales transpuestas con stride fraccional en el generador. Este cambio permite que la red aprenda su propia reducción de resolución. Además,
+	\item Usar batch normalization (ver \cite{ioffe2015batch}) tanto en el generador como en el discriminador. Si bien hoy en día esto es una práctica frecuente, no era obvio su uso en la fecha de publicación de este trabajo.
+	\item Eliminar capas fully-connected en arquitecturas profundas.
+	\item Usar ReLU en el generador (excepto en la última capa donde se suele usar $\tanh$) y Leaky-ReLU en el discriminador.
+\end{itemize}
+
+\subsection{Modelos basados en energía}
+\label{dm/generative_models/energy_based}
+
+\pendiente{escribir. decir que estos modelos después fueron conectados a los modelos de difusión cuando se usa score.}
+
+\section{Autoencoders variacionales}
+\label{dm/vae}
+
+\subsection{Modelos de variable latente}
+\label{dm/vae/latent_models}
+
+Hoy en día es sabido que los modelos de difusión pueden ser vistos como modelos autorregresivos o basados en flujo. Sin embargo, el camino que aquí se seguirá para introducirlos será mediante la formulación de un autoencoder variacional ya que entrega una construcción más natural y, en muchos, casos se utilizan ambos modelos de forma conjunta (ver \autoref{dm/discrete_dm/improvements}).
+
+Un enfoque frecuente en formulación de modelos generativos es el uso de variables latentes. Este tipo de modelos propone que los datos observados a partir de $x\sim\ptrue$ provienen realmente\footnote{Si bien esto no tiene por qué ser cierto, se puede asumir sin pérdida de generalidad ya una posible independencia entre $x$ y $z$ vuelve prescindible a $z$.} de una distribución conjunta con densidad $\ptrue(x,z)\in\lspace{1}{\R^d\times\R^l}$, donde la componente $z$ es una variable aleatoria latente (i.e., no es observada) que influye directamente en la generación de las muestras observadas (componente $x$). Con esto, los modelos de variable latente proponen un modelo gráfico cuyas densidades se factorizan como
+
+\begin{equation}
+    \label{eq:latent_model}
+    p_\theta(x,z)=p_\theta(z)p_\theta(x|z)
+\end{equation}
+
+\subsubsection{Criterio de máxima verosimilitud}
+
+Un criterio natural para elegir un mejor modelo dentro de una familia de modelos generativos es la máxima verosimilitud. En \cite{nichol2021improved} afirman que hoy en día se cree que optimizar un modelo generativo maximizando la log-verosimilitud, fuerza al modelo a capturar todas las modas de la distribución de los datos de entrenamiento.
+
+\begin{defn}[función de log-verosimilitud]
+    Sea $\mathcal{V}=\{p_\theta\}_{\theta\in\Theta}\subset\lspace{1}{\R^d}$ una familia paramétrica de funciones de densidad de probabilidad y $\mathcal{D} = \{x^k\}_{k=1}^n\subset\R^d$ un conjunto de observaciones i.i.d. provenientes de alguna distribución desconocida. La función de log-verosimilitud $l:\Theta\to\R$ asociada a $\mathcal{V}$ y a $\mathcal{D}$ se define como:
+
+    \begin{equation}
+        l_\mathcal{V}\parent{\theta|\mathcal{D}}
+        := \sum_{k=1}^n \log p_\theta(x_k)
+    \end{equation}
+\end{defn}
+
+Con esta definición, el criterio de máxima verosimilitud elige, como su nombre lo indica, al modelo generativo que maximiza la verosimilitud dentro de la familia de modelos:
+
+\begin{equation*}
+    \theta_{\text{MLE}}
+    =\argmax_{\theta\in\Theta} l_\mathcal{V}\left(\theta|\mathcal{D}\right)
+\end{equation*}
+
+Sin embargo, para utilizar el criterio de máxima verosimilitud es necesario poder evaluar $\log p_\theta(\cdot)$ en el conjunto de datos de entrenamiento. En un modelo de variable latente $p_\theta(x,z)=p_\theta(z)p_\theta(x|z)$ en general no es posible dicha evaluación. En efecto:
+
+\begin{equation}
+    \label{eq:generative_marginal}
+    p_\theta(x)
+    =\int_{\R^l} p_\theta(z)p_\theta(x|z) \d z
+    = \frac{p_\theta(z)p_\theta(x|z)}{p_\theta(z|x)}
+\end{equation}
+
+La primera igualdad se obtiene mediante marginalización, mientras que la segunda corresponde a la regla de Bayes. La primera igualdad no es tratable para modelos $p_\theta$ complejos ya que requiere evaluar varias veces el modelo para aproximar la integral numéricamente. La segunda igualdad no es computable dado que no se conoce la posterior $p_\theta(z|x)$.sub
+
+\subsubsection{Cota inferior de la evidencia}
+
+Debido a que no es posible calcular explícitamente la log-verosimilitud de un modelo de variable latente, se utilizará un enfoque aproximado para la evaluación de $\log p_\theta(\cdot)$, el cual está basado en técnicas de inferencia variacional. En este caso, la densidad marginal $p_\theta(\cdot)$ será evaluada utilizando la segunda igualdad en \eqref{eq:generative_marginal}, donde la posterior $p_\theta(z|x)$ se aproximará mediante un nuevo modelo paramétrico $q_\phi(z|x),\,\phi\in\Phi$.
+
+De aquí en adelante, a la cantidad $\log p_\theta(x)$ se le denominará \textit{evidencia}.
+
+Si bien se podría sustituir directamente el nuevo modelo $q_\phi(z|x)$ en \eqref{eq:generative_marginal} y obtener $p_\theta(x)\approx\frac{p_\theta(z)p_\theta(x|z)}{q_\phi(z|x)}$, no es posible maximizar dicha cantidad de forma conjunta ya que al no agregar una condición para que $q_\phi(z|x)$ aproxime a $p_\theta(z|x)$, bastaría tomar $p_\theta(x,z)\to\infty$ y $q_\phi(z|x)\to 0^+$. Debido a esto, se utilizará la divergencia de Kullback-Leibler\footnote{En el \autoref{eot_sbp} se estudiará esta divergencia con más detalle, donde será necesario utilizar la derivada de Radon-Nikydom para los casos donde no existen densidades.} para comparar las medidas:
+
+\begin{defn}[divergencia de Kullback-Leibler, caso absolutamente continuo]
+    \label{defn:kl_ac}
+    Dadas dos medidas de probabilidad $\mu,\nu\in\probmeasure{\R^d}$ con densidades $p_\mu,q_\nu\in L^1(\R^d)$ respectivamente, se define la divergencia de Kullback-Leibler entre $\mu$ y $\nu$ como:
+
+    \begin{equation}
+        \KL{\mu}{\nu} = \int_{\R^d} \log\parent{\frac{p_\mu(x)}{q_\nu(x)}}p_\mu(x) \d x
+    \end{equation}
+
+    donde se define, por continuidad, $0\cdot\log(0)=0$ en los casos que sea necesario.
+\end{defn}
+
+Dado que en este capítulo se está considerando que las medidas siempre poseen una función de densidad (con respecto a la medida de Lebesgue), se preferirá escribir $\KL{p_\mu}{q_\nu}$ en vez de $\KL{\mu}{\nu}$ para hacer explícita la dependencia de las densidades. Sin embargo, en los \autoref{ot} y \autoref{eot_sbp} será necesario trabajar directamente con las medidas para introducir la teoría.
+
+Teniendo definida esta función de comparación, se desarrollará una expresión para comparar el modelo paramétrico $q_\phi(z|x)$ con la densidad que realmente busca estimar, $p_\theta(z|x)$:
+
+\begin{equation}
+    \KL{q_\phi(z|x)}{p_\theta(z|x)}
+    = \E{q_\phi(z|x)}{\log\frac{q_\phi(z|x)}{p_\theta(z|x)}}
+    = \E{q_\phi(z|x)}{\log\frac{q_\phi(z|x)}{p_\theta(x,z)} + \log(x)}
+\end{equation}
+
+Donde se obtiene una relación explícita entre el error de aproximación de $q_\phi(z|x)$ y la evidencia:
+
+\begin{prop}[descomposición de la evidencia]
+    dado un modelo paramétrico auxiliar $q_\phi(z|x)$, se tiene la siguiente descomposición para la evidencia:
+
+    \begin{equation}
+        \label{eq:evidence_decomposition}
+        \log p_\theta(x)
+        = \KL{q_\phi(z|x)}{p_\theta(z|x)} + \underbrace{\E{q_\phi(z|x)}{\log\frac{p_\theta(x,z)}{q_\phi(z|x)}}}_{\elbo}
+    \end{equation}
+\end{prop}
+
+Si bien el primer término de la igualdad no es tratable ya que requiere conocer la posterior $p_\theta(z|x)$, la desigualdad de Gibbs\footnote{Esta desigualdad afirma que la divergencia de Kullback-Leibler es no negativa.} permite afirmar que el término definido como ELBO (\textit{evidence lower bound}) es una cota inferior de la evidencia $\log p_\theta(x)$. Además, esta descomposición sugiere una nueva función objetivo para abordar el problema de la máxima verosimilitud ya que
+
+\begin{equation}
+    \label{eq:elbo}
+    \elbo = \log p_\theta(x) - \KL{q_\phi(z|x)}{p_\theta(z|x)}
+\end{equation}
+
+Por lo tanto, al maximixar la ELBO según su definición en \eqref{eq:evidence_decomposition} se estará maximizando la evidencia al mismo tiempo que se minimiza la divergencia $\KL{q_\phi(z|x)}{p_\theta(z|x)}$. De este modo, si los modelos $p_\theta$ y $q_\phi$ tienen suficiente capacidad, se estará optimizando la evidencia al mismo tiempo que se ajusta el modelo auxiliar $q_\phi(z|x)$ a la posterior real $p_\theta(z|x)$.
+
+Por otra parte, si bien la definición de la ELBO dada en \eqref{eq:evidence_decomposition} es aproximable mediante estimaciones de Monte Carlo, su expresión es poco interpretable. Trabajando más esta expresión:
+
+\begin{equation}
+    \elbo
+    = \E{q_\phi(z|x)}{\log\frac{p_\theta(z)p_\theta(x|z)}{q_\phi(z|x)}}
+    = \E{q_\phi(z|x)}{\log p_\theta(x|z)} + \E{q_\phi(z|x)}{\log\frac{p_\theta(z)}{q_\phi(z|x)}}
+\end{equation}
+
+Interpretando el segundo término de la segunda igualdad como una divergencia se llega a la caracterización usada en general:
+
+\begin{prop}[descomposición de la ELBO]
+    Se tiene la siguiente descomposición para la ELBO:
+
+    \begin{equation}
+        \label{eq:elbo_decomposition}
+        \elbo
+        = \underbrace{\E{q_\phi(z|x)}{\log p_\theta(x|z)}}_{\text{término de reconstrucción}}
+        - \underbrace{\KL{q_\phi(z|x)}{p_\theta(z)}}_{\text{prior matching}}
+    \end{equation}
+\end{prop}
+
+El término de reconstrucción\footnote{Si bien este término tiene forma de entropía cruzada, no lo es ya que $p_\theta(x|\cdot)$ no es distribución de probabilidad.}, que se sigue aproximando mediante aproximaciones de Monte Carlo, mide qué tan probable es, en esperanza, que la variable latente $z$ asociada a $x$ (según $q_\phi(z|x)$) genere realmente a $x$. Por otra parte, el segundo término busca que la posterior aproximada $q_\phi(z|x)$ no se desvíe demasiado de la prior original $p_\theta(z)$. Se verá que bajo ciertas elecciones de modelos, el segundo término puede tener forma cerrada.
+
+Es importante notar que cuando el modelo $p_\theta(x|z)$ tiene demasiada capacidad, es posible que pueda reconstruir los datos $x$ sin hacer uso de la variable latente (i.e., $x$ se vuelve independiente de $z$). Este fenómeno se denomina colapso de la posterior y, si bien se sigue logrando el objetivo de tener un modelo generativo para $x$, ya no es posible guiar la generación de acuerdo a elecciones específicas de $z$. Una posible solución es agregar la restricción de que el término \textit{prior matching} sea mayor que un cierto valor $\delta$, tal como se propone en \cite{razavi2019preventing}.
+
+\paragraph{Conexión de la ELBO con la física estadística}
+
+De acuerdo a la física estadística, la probabilidad de que un sistema esté en un estado $k$ con energía $\varepsilon_k$ viene dada por la distribución de Boltzmann
+
+\begin{equation}
+	\label{eq:boltzmann}
+	p(k) \propto \exp\left(-\frac{\varepsilon_k}{k_B T}\right)
+\end{equation}
+
+donde $k_B$ es la constante de Boltzmann y $T$ es la temperatura del sistema, por lo que la fracción en la exponencial es adimensional.
+
+Esto motiva que el término $-\log p(k)$ sea generalmente llamado energía. Con esta analogía, es posible conectar la ELBO con la energía libre de Helmholtz. En efecto, al desarrollar la ELBO a partir de su definición original en \eqref{eq:evidence_decomposition}:
+
+\begin{align}
+	\elbo &= \E{q_\phi(z|x)}{\log\frac{p_\theta(x,z)}{q_\phi(z|x)}}\\
+    & = \E{q_\phi(z|x)}{\log p_\theta(x,z)} - \E{q_\phi(z|x)}{\log q_\phi(z|x)} \\
+	& = -\underbrace{\E{q_\phi(z|x)}{-\log p_\theta(x,z)}}_{\text{energía esperada}} + \underbrace{H(q_\phi(\cdot|z))}_{\text{entropía}}
+\end{align}
+
+Por otra parte, si $U$ es la energía interna, $T$ es la temperatura ambiente y $S$ es la entropía del sistema, la energía libre de Helmholtz queda definida como:
+
+\begin{equation}
+	F = U-TS
+\end{equation}
+
+La cual es minimizada en el equilibro termodinámico. Por lo tanto, la ELBO (que se busca maximizar) se también se le conoce como energía libre variacional negativa.
+
+\pendiente{comentar relación con los modelos basados en energía.}
+
+En la \autoref{eot_sbp/static_sbp} se volverá a utilizar la distribución de Boltzmann para conectar el problema de regularización entrópica estudiado en la \autoref{eot_sbp/regularized} con el problema del puente de Schrödinger en su versión estática.
+
+\subsection{Formulación de un VAE}
+\label{dm/vae/formulation}
+
+La descomposición de la ELBO dada en \eqref{eq:elbo_decomposition} motiva a elegir ciertos modelos $q_\phi(z|x)$ y $p_\theta(z)$ de tal forma que la divergencia $\KL{q_\phi(z|x)}{p_\theta(z)}$ tenga forma cerrada.
+
+Un autoencoder variacional (VAE) es un modelo de variable latente propuesto en \cite{kingma2022autoencoding} que propone la siguiente estructura para los modelos paramétricos:
+
+\begin{align}
+    q_\phi(z|x) & \sim \gaussian{\mu_\phi(x)}{\Sigma^2_\phi(x)} \label{eq:vae_model_posterior} \\
+    p_\theta(z) & = p(z) \sim \gaussian{0}{\identity{l}} \label{eq:vae_model_prior}
+\end{align}
+
+donde $p_\theta(\cdot|z)\in L^1(\R^d)$, $\mu_\phi:\R^d\to\R^l$ y $\Sigma_\phi^2:\R^d\to\mathcal{S}_{++}$ son funciones generalmente aprendidas por redes neuronales. Generalmente la matriz de covarianzas se asume diagonal, indicando que la variable latente $z$ tiene componentes independientes. Esta restricción, además de simplificar la expresión de la divergencia $\KL{q_\phi(z|x)}{p_\theta(z)}$, reduce la cantidad de parámetros y estabiliza el entrenamiento. En la \autoref{fig:dm/vae} se puede observar una ilustración de este modelo.
+
+\insertimage{dm/vae}{0.6}{Representación gráfica de un autoencoder variacional para MNIST. Imagen obtenida desde \cite{hafner2018tfdistvae}.}
+
+Para el cálculo de la divergencia en \eqref{eq:elbo_decomposition} se utilizará el siguiente resultado:
+
+\begin{teo}[divergencia de Kullback-Leibler entre distribuciones gaussianas]
+    \label{teo:kl_gaussians}
+
+    Para dos variables aleatorias gaussianas $x\sim\gaussian{\mu_1}{\Sigma_1}$ e $y\sim\gaussian{\mu_2}{\Sigma_2}$ en $\R^l$ se tiene que:
+
+    \begin{equation}
+        \KL{x}{y} = \frac{1}{2}\rparent{(\mu_2-\mu_1)^\top\Sigma_2^{-1}(\mu_2-\mu_1) + \trace{\Sigma_2^{-1}\Sigma_1} - \log\parent{\frac{|\Sigma_1|}{|\Sigma_2|}-l}}
+    \end{equation}
+
+    donde se ha denotado $\KL{x}{y}$ para indicar la divergencia entre las medidas asociadas a las variables aleatorias $x$ e $y$ respectivamente.
+
+\end{teo}
+
+Considerando que $\Sigma_\phi(x) = \text{diag}(\sigma_\phi^2(x))$ con $\sigma_\phi^2(x)\in\R^l_{++}$ parámetros aprendibles\footnote{En la práctica se aprenden parámetros $\log\left(\sigma_\phi^2(x)_k\right)\in\R$ para eliminar la restricción de positividad en la red neuronal.}, la divergencia en \eqref{eq:elbo_decomposition} en el caso de un VAE queda de la forma:
+
+\begin{equation}
+    \KL{q_\phi(z|x)}{p(z)}
+    = \frac{1}{2}\rparent{
+        \norm{\mu_\phi(x)}^2 + \sum_{k=1}^l \sigma_\phi^2(x)_k
+        - \log\parent{\prod_{k=1}^l \sigma_\phi^2(x)_k}-d}
+\end{equation}
+
+Luego, la función objetivo usada en un VAE viene dada por la siguiente expresión:
+
+\begin{prop}[descomposición de la ELBO para VAE]
+    Bajo los modelos propuestos en \eqref{eq:vae_model_posterior} y \eqref{eq:vae_model_prior}, la ELBO dada en \eqref{eq:elbo_decomposition} se reformula como:
+
+    \begin{equation}
+        \label{eq:elbo_vae}
+        \elbo
+        = \E{q_\phi(z|x)}{\log p_\theta(x|z)} + \frac{1}{2}\rparent{
+            \sum_{k=1}^1 \mu_\phi^2(x)_k + \sigma_\phi^2(x)_K
+            - \log\parent{\sigma_\phi^2(x)_k} - 1}
+    \end{equation}
+
+    donde el primer término se aproxima utilizando una estimación de Monte Carlo con $K$ muestras\footnote{En \cite{kingma2022autoencoding} proponen usar $K=1$.}:
+
+    \begin{equation}
+        \label{eq:reconstruction_montecarlo}
+        \E{q_\phi(z|x)}{\log p_\theta(x|z)}
+        \approx \frac{1}{K}\sum_{k=1}^K \log p_\theta(x|\mu_\phi(x)+\sigma_\phi(x)\odot\epsilon_k),
+        \quad
+        \epsilon_k \sim \gaussian{0}{I_l}, \forall k\in\{1\ldots K\}
+    \end{equation}
+
+    con $\odot$ representando el producto de Hadamard (element-wise).
+\end{prop}
+
+Es importante destacar que en \eqref{eq:reconstruction_montecarlo} es necesario condicionar sobre $\mu_\phi(x)+\sigma_\phi(x)\odot\epsilon_k$ y no directamente sobre $z_k$ con $z_k\sim \gaussian{\mu_\phi(x)}{\sigma^2_\phi(x)}$ ya que de esta última forma se pierde la diferenciabilidad necesaria para los algoritmos de gradiente. Esta técnica se conoce como \textit{truco de la reparametrización}.
+
+Con respecto a la elección de la dimensión latente $l\in\N$, es usual elegir un valor $l\ll d$, lo cual permite muchas veces transformar datos de alta dimensión a uno de menor dimensión, pudiendo ganar eficiencia computacional sin perder una cantidad significativa de información. Esto último se suele justificar mediante el siguiente resultado, el cual afirma que es posible proyectar un conjunto de $n$ puntos en $\R^d$ a cualquier espacio de dimensión mayor o igual a $\mathcal{O}\parent{\frac{\log n}{\epsilon^2}}$ de tal forma que la distancia euclidiana original de los puntos no se distorsione más allá de un factor $1\pm\epsilon$. Además, el mapa de proyección puede ser encontrado aleatoriamente en tiempo polinomial (en el sentido de Turing), aunque para efectos de los modelos generativos, este último resultado es omitido ya que se suele buscar un proyector mediante el entrenamiento de una red neuronal:
+
+\begin{teo}[Johnson-Lindenstrauss]
+    Sea $\epsilon\in (0,1)$ y $\{x^k\}_{k=1}^n\subset\R^d$ un conjunto de puntos. Entonces, para todo $l\in\N$ con $l\geq\frac{24}{3\epsilon^2 - 2\epsilon^3} \log n$ existe un mapa $f:\R^d\to\R^l$ tal que
+
+    \begin{equation}
+        \label{eq:johnson_indenstrauss}
+        (1-\epsilon)\norm{x_i-x_j}^2 \leq \norm{f(x_i)-f(x_j)}^2 \leq (1+\epsilon)\norm{x_i-x_j}^2, \quad\forall i,j\in\{1,\ldots,n\}
+    \end{equation}
+
+    Además, existe un conjunto $\{x^k\}_{k=1}^n\subset\R^d$ tal que la cota para $l\in\N$ es alcanzada. En cualquier caso, el problema de encontrar $f$ está en la clase de complejidad $\operatorname{BPP}$\footnote{Recordar que esta es la clase de problemas decidibles en tiempo polinomial por máquinas de Turing probabilísticas con una probabilidad de error menor a $\frac{1}{3}$ (ver \cite{arora2009computational}).}.
+\end{teo}
+
+Una demostración de este resultado se puede encontrar en \cite{dasgupta2003elementary}.
+
+\subsubsection{Cálculo del término de reconstrucción}
+
+En esta subsección se verá la forma que toma el término de reconstrucción en \eqref{eq:elbo_vae} cuando se trabaja con datos continuos y con imágenes.
+
+\paragraph{Término de reconstrucción en datos continuos}
+
+En el caso estándar con $x\in\R^d$ se suele proponer el modelo
+
+\begin{equation}
+	p_\theta(x|z)\sim\gaussian{f_\theta(z)}{\identity{d}}
+	\label{eq:decoder_continuous}
+\end{equation}
+
+En este caso $\log p_\theta(x|z) = \log (2\pi)^{-\frac{d}{2}} - \frac{1}{2}\left((x-f_\theta(z))^\top (x-f_\theta(z))\right)$, por lo tanto:
+
+\begin{prop}[término de reconstrucción en datos continuos]
+	Bajo el modelo \eqref{eq:decoder_continuous}, el término de reconstrucción en \eqref{eq:elbo_vae} toma la siguiente forma:
+
+	\begin{equation}
+		\E{q_\phi(z|x)}{\log p_\theta(x|z)} = -\frac{1}{2} \norm{x-f_\theta(z)}^2 + \cte
+	\end{equation}
+
+	Es decir, se recupera el error cuadrático generalmente usado en un autoencoder convencional.
+\end{prop}
+
+\paragraph{Término de reconstrucción en imágenes}
+
+Por simplicidad, se considerará que se está trabajando con imágenes monocromáticas, las cuales usualmente son representadas como matrices en $\matrixspace{p,q}{[0,1]}\cong [0,1]^{pq}$. En el caso de trabajar con más canales, el siguiente análisis se extrapola de forma natural.
+
+Cada pixel $x_{ij}$ de la imagen puede ser interpretado como una distribución Bernoulli con soporte\footnote{El soporte de una variable aleatoria corresponde a los puntos donde la función de masa (o la función de densidad en el caso continuo) es no nula. Es decir, corresponde al conjunto de valores que una variable aleatoria puede tomar.} en $\{0,1\}$, donde los estados indican si el pixel está desactivado (0) o encendido (1). Suponiendo que los pixeles son independientes entre sí dada la variable latente que genera la imagen, es natural proponer el modelo
+
+\begin{equation}
+	p_\theta(x|z)=\prod_{i,j=1}^{p,q} p_\theta(x_{ij}|z), \quad
+	p_\theta(x_{ij}|z) \sim \operatorname{Bernoulli}\parent{r_\theta(z)_{ij}}
+	\label{eq:decoder_images}
+\end{equation}
+
+donde $r_\theta(z)\in\matrixspace{p,q}{[0,1]}$ son parámetros entrenables. En el caso de usar una red neuronal para aprender los modelos, es usual usar una capa sigmoidal en la salida para restringir el codominio. Bajo este modelo paramétrico:
+
+\begin{equation}
+	\log p_\theta(x|z) = \log\left(\prod_{i,j=1}^{p,q} p_\theta(x_{ij}|z)\right) = \sum_{i,j=1}^{p,q} \log p_\theta(x_{ij}|z)
+\end{equation}
+
+Considerando que $p_\theta(x_{ij}|z) = r_\theta(z)_{ij}^{x_{ij}}(1-r_\theta(z)_{ij})^{1-x_{ij}}$, se tiene el siguiente resultado:
+
+\begin{prop}[término de reconstrucción en imágenes]
+	Bajo el modelo \eqref{eq:decoder_images}, el término de reconstrucción en \eqref{eq:elbo_vae} toma la siguiente forma:
+
+	\begin{equation}
+		\E{q_\phi(z|x)}{\log p_\theta(x|z)} = \E{q_\phi(z|x)}{\sum_{i,j=1}^{p,q} x_{ij}\log\parent{r_\theta(z)_{ij}}+(1-x_{ij})\log\parent{1-r_\theta(z)_{ij}}}
+	\end{equation}
+\end{prop}
+
+La esperanza con respecto a $q_\phi(z|x)$ se sigue aproximando con estimaciones de Monte Carlo, mientras que lo que está dentro de la suma se suele programar como una entropía cruzada binaria negativa $-H(x_{ij},r_\theta(z)_{ij})$ con $x_{ij}$ y $r_\theta(z)_{ij}$ como distribuciones Bernoulli.
+
+Un detalle importante, que muchas veces es pasado por alto, es que los pixeles tienen intensidad de color, por lo que realmente toman valores en $[0,1]$ y no en $\{0,1\}$, por lo que modelar los pixeles como distribuciones Bernoulli es incorrecto. En \cite{loaizaganem2019continuous} muestran que este error no es únicamente un problema técnico y proponen una nueva distribución (\textit{continuous Bernoulli}) con soporte en $[0,1]$ que busca solucionar este problema, mejorando notablemente la calidad en la generación.
+
+\subsubsection{Autoencoders variacionales jerárquicos markovianos}
+
+Una generalización natural de los VAEs es considerar una familia ordenada de variables latentes $z_1,\ldots,z_T$, donde la $t$-ésima variable latente depende de $z_{(t+1):T}$\footnote{La notación $z_{t_1:t_2}$ es una forma compacta de escribir $\{z_t\}_{t=t_1}^{t_2}$, y será utilizada generalmente para representar modelos jerárquicos.}. Este tipo de modelos se conocen como autoencoders variacionales jerárquicos (HVAE) y corresponden al paso previo para introducir los modelos de difusión a tiempo discreto en la \autoref{dm/discrete_dm}. La distribución conjunta del decoder de este tipo de modelos se factoriza de la siguiente forma:
+
+\begin{equation}
+    \label{eq:joint_hvae_decoder}
+    p_\theta(x, z_{1:T})
+    = p_\theta(x|z_{1:T})\underbrace{
+        \left(\prod_{t=2}^{T} p_\theta(z_{t-1}|z_{t:T})\right)
+        p_\theta(z_T)}_{p_\theta(z_{1:T})}
+\end{equation}
+
+Notando que el único cambio en la formulación de un HVAE con respecto al modelo de variable latente simple \eqref{eq:latent_model} fue pasar de $z$ a $z_{1:T}$, se puede obtener directamente una expresión para la ELBO en este nuevo tipo de modelos:
+
+\begin{prop}[ELBO para un HVAE]
+    Para el modelo dado en \eqref{eq:joint_hvae_decoder} y considerando una posterior aproximada $q_\phi(z_{1:T}|x)$ la ELBO toma la siguiente forma:
+
+    \begin{equation}
+        \label{eq:elbo_mhvae}
+        \elbo
+        = \E{q_\phi(z_{1:T}|x)}{\log\frac{p_\theta(x,z_{1:T})}{q_\phi(z_{1:T}|x)}}
+    \end{equation}
+\end{prop}
+
+Al imponer una condición de independencia markoviana $p_\theta(z_{t-1}|z_{t:T})=p_\theta(z_{t-1}|z_t)$ se obiene un modelo gráfico $x\to z_1\to z_2\to\cdots\to z_T$ denominado autoencoder variacional jerárquico markoviano (MHVAE). En este caso, la distribución conjunta del decoder se reduce a
+
+\begin{equation}
+    \label{eq:joint_mhvae_decoder}
+    p_\theta(x, z_{1:T})
+    = p_\theta(x|z_1)\left(\prod_{t=2}^{T}
+    p_\theta(z_{t-1}|z_t)\right)
+    p_\theta(z_T)
+\end{equation}
+
+Mientras que el modelo de inferencia aproximada para la posterior $p_\theta(z_{1:T}|x)$ toma la forma
+
+\begin{equation}
+    \label{eq:joint_mhvae_encoder}
+    q_\phi(z_{1:T}|x)
+    = q_\phi(z_1|x) \left(\prod_{t=2}^{T} q_\phi(z_t|z_{t-1})\right)
+\end{equation}
+
+En la \autoref{fig:dm/vae_hvae_graph} se puede observar el modelo gráfico asociado a un VAE estándar y un HVAE con un nivel adicional de jerarquía. Si bien esta familia de modelos son interesantes por sí solos, aquí son introducidos únicamente para definir lo que es un modelo de difusión en la siguiente subsección.
+
+\begin{figure}
+    \caption{Modelo gráfico para un VAE estándar (izquierda) y para un HVAE con dos niveles de jerarquía (derecha). Imágenes obtenidas desde \cite{turner_diffusion_2021}.}
+    \label{fig:dm/vae_hvae_graph}
+    \centering
+    \includegraphics[height=4cm]{images/dm/vae_graph}
+    \hspace{1cm}
+    \includegraphics[height=4cm]{images/dm/hvae_graph}
+\end{figure}
+
+\section{Modelos de difusión a tiempo discreto}
+\label{dm/discrete_dm}
+
+Los modelos de difusión fueron introducidos originalmente el año 2015 en \cite{sohldickstein2015deep}. En esa época los modelos generativos predominantes eran las GANs (ver \autoref{dm/generative_models/gans}), introducidas un año antes en \cite{goodfellow2014generative}. Debido al gran progreso que se estaba obteniendo en los modelos tipo GAN, el modelo de difusión propuesto en \cite{sohldickstein2015deep} no obtuvo mayor interés hasta el año 2020, cuando investigadores de la universidad de Californa en Berkeley propusieron el modelo \textit{denoising diffusion probabilistic models} (DDPM) en \cite{ho2020denoising}. Los modelos de este tipo actualmente constituyen el estado del arte (SOTA) de los modelos generativos en visión computacional.
+
+De aquí en adelante, a la familia de modelos relacionados con el modelo DDPM se les denominará modelos de difusión.
+
+\subsection{Formulación}
+\label{dm/discrete_dm/formulation}
+
+El modelo de difusión propuesto por \cite{ho2020denoising}, puede ser construido como un MHVAE con dos grandes diferencias o imposiciones.
+
+Primero, la dimensión de las variables latentes $z_{1:T}$ es igual a la dimensión de los datos (es decir, $l=d$). Esto contrasta con la noción de cuello de botella vista en el VAE clásico, donde la variable latente $z$, motivada por la \textit{manifold assumption}\footnote{Esta hipótesis afirma que los datos observados realmente provienen de un espacio de menor dimensión (más rigurosamente, una variedad), el cual está inmerso en el espacio ambiente $\R^d$. Esta suposición busca explicar por qué, aparentemente, las redes neuronales no sufren de la maldición de la dimensionalidad.}, tenía dimensión estrictamente menor a la dimensión observable. Esta nueva restricción permite denotar, con un leve abuso de notación, $(x, z_{1:T})$ como $x_{0:T}$, donde $x_0=x$ y $x_t=z_t$.
+
+La segunda diferencia es que ahora el modelo $q_\phi(x_{1:T}|x)$ (que originalmente buscaba aproximar la posterior intratable $p_\theta(x_{1:T}|x)$) ahora está fijo, por lo que ya no posee parámetros entrenables $\phi$. Más aún, se impone que sus transiciones $q(x_t|x_{t-1})$ sean gaussianas con parámetros (fijos) tales que $q(x_T)\approx\pprior(x_T)$, donde $\pprior$ es una distribución de la cual es fácil generar muestras, por lo que se suele fijar $\pprior(x_T)\sim\gaussian{0}{\identity{d}}$.
+
+Para cumplir estas restricciones, se considera una secuencia finita y decreciente $(\alpha_t)_{t=1}^T\subset[0,1]$ y se define:
+
+\begin{equation}
+    \label{eq:ddpm_forward}
+    q(x_{1:T}|x_0) = \prod_{t=1}^{T} q(x_t|x_{t-1}),
+    \quad\text{donde}\quad
+    q(x_t|x_{t-1}) \sim \gaussian{\sqrt{\alpha_t} x_{t-1}}{(1-\alpha_t)\identity{d}}
+\end{equation}
+
+Para un tiempo de difusión $T$ lo suficientemente grande con $\alpha_T\approx 0$, la densidad marginal de $x_T$, $q(x_T)=\int q(x_{0:T})\, dx_{0:(T-1)}$, será aproximadamente $\gaussian{0}{\identity{d}}$. Notar que la igualdad solo se alcanza cuando $T\to\infty$, donde la distribución gaussiana corresponde a la distribución estacionaria del proceso de difusión.
+
+Por otra parte, el modelo $p_\theta(x_{0:T})$ sigue teniendo la misma estructura que antes:
+
+\begin{equation}
+    p_\theta(x_{0:T}) = p_\theta(x_T)\prod_{t=1}^{T} p_\theta(x_{t-1}|x_t),
+    \quad\text{donde}\quad
+    p_\theta(x_T) = p(x_T) = \gaussian{0}{\identity{d}}
+    \label{eq:ddpm_backward}
+\end{equation}
+
+Este modelo se interpreta diciendo que el proceso forward $q(x_{1:T}|x_0)$ agrega progresivamente ruido a una muestra generada desde $x_0$, mientras que el proceso backward $p_\theta(x_{0:T})$ aprende a deshacer dicha inyección de ruido (\textit{denoising}) comenzando desde $p(x_T)\sim \gaussian{0}{\identity{d}}\approx q(x_T)$. Una ilustración del modelo gráfico asociado a DDPM se puede encontrar en la \autoref{fig:dm/ddpm_model}.
+
+\insertimage{dm/ddpm_model}{1}{Modelo gráfico del proceso de denoising. El proceso comienza con una muestra $x_T\sim p_\text{prior}(x_T)$ y continua con las transiciones de Markov dadas en \eqref{eq:ddpm_backward} usando un modelo $p_\theta$ ya entrenado. La flecha reversa indica el proceso de inyección de ruido realizado durante el entrenamiento. Imagen obtenida desde \cite{ho2020denoising}.}
+
+Por lo tanto, para generar una nueva muestra desde $\ptrue$ teniendo el modelo $p_\theta$ ya entrenado, bastará con generar una muestra $x_T\sim\pprior(x_T)$ y aplicar iterativamente las transiciones $p_\theta(x_{t-1}|x_t)$ hasta llegar a $x_0$.
+
+Antes de pasar a la distribución basal que se elegirá para modelar las transiciones $p_\theta(x_{t-1}|x_t)$ se verán dos propiedades útiles que motivarán su estructura.
+
+\subsubsection{Propiedades de los procesos forward y backward}
+
+El proceso de inyección de ruido definido en \eqref{eq:ddpm_forward} es una cadena de Markov $(x_t)_{t=0}^T$ con distribución inicial $x_0\sim q(x_0)=\ptrue(x_0)$. Por lo tanto, para obtener la muestra ruidosa en tiempo $t$ es necesario conocer la muestra ruidosa en tiempo $t-1$. Si bien esto se puede conseguir iterando sobre $q(x_t|x_{t-1})$, esto no es eficiente cuando se necesita la distribución en un único tiempo $t\gg 1$. Dado que la cadena tiene transiciones gaussianas, es posible integrar para obtener $q(x_t|x_0)$:
+
+\begin{prop}[marginal condicional para el proceso forward]
+    \label{prop:forward_marginal}
+    Bajo las transiciones definidas en \eqref{eq:ddpm_forward}, el proceso forward posee la siguiente propiedad:
+
+    \begin{equation}
+        \label{eq:forward_marginal}
+        q(x_t|x_0)\sim\gaussian{\sqrt{\overline{\alpha}_t}x_0}{(1-\overline{\alpha}_t)\identity{d}},
+        \quad\text{donde}\quad
+        \overline{\alpha}_t := \prod\limits_{k=1}^t \alpha_k
+    \end{equation}
+\end{prop}
+
+\begin{proof}
+    \pendiente{escribir.}
+\end{proof}
+
+Esta propiedad es considerada, generalmente, como una de la más importante dentro de los modelos de difusión, al punto que se le suele citar, sin hacer referencia explícita, como la \textit{nice property}\footnote{Dado que para el entrenamiento se utiliza esta propiedad, algunos trabajos entregan los niveles de ruidos como secuencias asociadas a la varianza de $q(x_t|x_0)$ y no de $q(x_{t}|x_{t-1})$. Ambos métodos son identificables entre sí.}. Algunas variantes del modelo original de DDPM, como DDIM (ver \cite{song2022denoising}) se enfocan en realizar modificaciones al modelo DDPM original buscando preservar precisamente esta propiedad.
+
+Por otra parte, a pesar de que el proceso backward dado en \eqref{eq:ddpm_backward} no es conocido (ya que no se conoce $q(x_0)$), es posible obtener las transiciones inversas cuando se condiciona a $x_0$. Esta propiedad es importante ya que, en la función de costo de un modelo de difusión, aparece una divergencia con esta distribución.
+
+\begin{prop}[proceso inverso condicional a $x_0$]
+    \label{prop:conditional_backward}
+    Dado el proceso forward definido en \eqref{eq:ddpm_forward}, el proceso inverso dado $x_0$ también es gaussiano y tiene distribución
+
+    \begin{equation}
+        \label{eq:conditional_backward}
+        q(x_{t-1}|x_t,x_0) = \gaussian{\mu_q(x_0,x_t,t)}{\sigma_q^2(t)\identity{d}}
+    \end{equation}
+
+    donde la media es una combinación lineal entre $x_0$ y $x_t$, mientras que la varianza solo depende de $t$:
+
+    \begin{equation}
+        \label{eq:conditional_backward_params}
+        \mu_q(x_0,x_t, t) := \frac{\sqrt{\overline{\alpha}_{t-1}}(1-\alpha_t)}{1-\overline{\alpha}_t}x_0 + \frac{\sqrt{\alpha_t}(1-\overline{\alpha}_{t-1})}{1-\overline{\alpha}_t}x_t
+        \quad\text{y}\quad
+        \sigma_q^2(t) := \frac{(1-\alpha_t)(1-\overline{\alpha}_{t-1})}{1-\overline{\alpha}_t}
+    \end{equation}
+
+    con $\overline{\alpha}_t := \prod\limits_{k=1}^t \alpha_k$.
+\end{prop}
+
+\begin{proof}
+    Por regla de Bayes y propiedad de Markov:
+
+    \begin{align}
+        q(x_{t-1}|x_t,x_0) & = \frac{q(x_t|x_{t-1})q(x_{t-1}|x_0)}{q(x_t|x_0)}\propto q(x_t|x_{t-1})q(x_{t-1}|x_0)\\
+                           & \propto \exp\left[-\frac{1}{2}\left(\frac{\norm{x_t-\sqrt{\alpha_t}x_{t-1}}^2}{1-\alpha_t} + \frac{\norm{x_{t-1}-\sqrt{\overline{\alpha}_{t-1}}x_0}^2}{1-\overline{\alpha}_{t-1}}\right)\right]
+    \end{align}
+
+    Usando las propiedades $\norm{a\pm b}^2=\norm{a}^2\pm 2\langle a,b\rangle + \norm{b}^2$ y $\dotproduct{\lambda a}{b} = \dotproduct{a}{\lambda b}$ para el término dentro del paréntesis:
+
+    \begin{align}
+         & \frac{\norm{x_t-\sqrt{\alpha_t}x_{t-1}}^2}{1-\alpha_t} + \frac{\norm{x_{t-1}-\sqrt{\overline{\alpha}_{t-1}}x_0}^2}{1-\overline{\alpha}_{t-1}}\\
+         & = \frac{\alpha_t\norm{x_{t-1}}^2-2\dotproduct{\sqrt{\alpha_t}x_{t-1}}{x_t}}{1-\alpha_t} + \frac{\norm{x_{t-1}}^2-2\dotproduct{x_{t-1}}{\sqrt{\overline{\alpha}_{t-1}} x_0}}{1-\overline{\alpha}_{t-1}}+\cte\\
+         & =\norm{x_{t-1}}^2\underbrace{\parent{\frac{\alpha_t}{1-\alpha_t}+\frac{1}{1-\overline{\alpha}_{t-1}}}}_{\frac{1-\overline{\alpha}_t}{(1-\alpha_t)(1-\overline{\alpha}_{t-1})}}-2\dotproduct{x_{t-1}}{\underbrace{\parent{\frac{\sqrt{\alpha_t}x_t}{1-\alpha_t} + \frac{\sqrt{\overline{\alpha}_{t-1}}x_0}{1-\overline{\alpha}_{t-1}}}}_{\frac{\sqrt{\alpha_t}x_t(1-\overline{\alpha}_{t-1})+\sqrt{\overline{\alpha}_{t-1}}x_0(1-\alpha_t)}{(1-\alpha_t)(1-\overline{\alpha}_{t-1})}}} + \cte \\
+         & =\frac{1-\overline{\alpha}_{t-1}}{(1-\alpha_t)(1-\overline{\alpha}_{t-1})}\parent{\norm{x_{t-1}}^2-2\dotproduct{x_{t-1}}{\frac{\sqrt{\alpha_t}x_t + \sqrt{\overline{\alpha}_{t-1}}x_0}{1-\overline{\alpha}_t}}} + \cte\\
+    \end{align}
+
+    La demostración concluye notando que esto define completamente $q(x_{t-1}|x_t,x_0)$ salvo constantes multiplicativas de normalización.
+\end{proof}
+
+\subsubsection{Formulación para el proceso inverso}
+
+Si bien la \autoref{prop:conditional_backward} indica que las transiciones condicionales $q(x_{t-1}|x_t,x_0)$ son gaussianas, nada asegura que las transiciones incondicionales $q(x_{t-1}|x_t)$ lo sean y, de hecho, en general no lo son.
+
+Sin embargo, el proceso backward $p_\theta(x_{t-1}|x_t)$ sí se elegirá gaussiano pero su motivación formal viene de otra parte. Notando que las transiciones forward de la forma
+
+\begin{equation}
+    q(x_{t+1}|x_{t})\sim\gaussian{x_t+\gamma_{t+1} f(x_t)}{2\gamma_{t+1}\identity{d}}
+\end{equation}
+
+corresponden a una discretización de Euler-Maruyama de la SDE
+
+\begin{equation}
+    dx_t = f(x_t)dt + \sqrt{2}sW_t,\quad x_0\sim q(x_0)
+\end{equation}
+
+Si $f(x)=-\rho x$ (en este caso lo es), la SDE representa un proceso de Ornstein-Uhlenbeck $(x_t)_{t\in[0,1]}$ (ver \autoref{dm/continuous_dm/sdes_introduction}), por lo que su proceso reverso $(y_{T-t})_{t\in[0,1]}$ vendrá dado por una SDE lineal. Luego, el proceso reverso es un proceso de Markov con transiciones gaussianas. Con esta observación se puede justificar que es correcto considerar las transiciones backward $p_\theta(x_{t-1}|x_t)$ como gaussianas, siempre y cuando estén representando una discretización con espaciado $\gamma_t\ll 1$, lo cual se logra eligiendo $\alpha_{t}-\alpha_{t-1}$ suficientemente pequeño.
+
+Por lo tanto, se propone elegir un modelo paramétrico
+
+\begin{equation}
+    \label{eq:backward_transition}
+    p_\theta(x_{t-1}|x_t)\sim\gaussian{\mu_\theta(x_t,t)}{\Sigma_\theta(x_t,t)}
+\end{equation}
+
+Notando que la matriz de covarianza de $q(x_{t-1}|x_t,x_0)$ en \eqref{eq:conditional_backward} es independiente de $x_0$ (solo depende de $t$), en el modelo original de DDPM, \cite{ho2020denoising}, los autores decidieron fijar
+
+\begin{equation}
+    \label{eq:backward_covariance}
+    \Sigma_\theta(x_t,t):=\Sigma(t):=\sigma_q^2(t)\identity{d}
+\end{equation}
+
+Como se verá en el \autoref{teo:elbo_ddpm}, esta elección permitirá simplificar la función objetivo de los modelos de difusión. También se probó usar $\Sigma(t):=(1-\alpha_{t})\identity{d}$ basándose en la covarianza de $q(x_{t}|x_{t-1})$ según \eqref{eq:ddpm_forward}, que también es independiente de $x_0$. El primer caso corresponde a la cota inferior de la entropía para el proceso reverso, donde $x_0$ tiene toda la masa en un único punto, mientras que el segundo caso corresponde a la cota superior, donde $x_0$ es un ruido isotrópico gaussiano $x_0\sim\gaussian{0}{I_d}$.
+
+Ambas elecciones de $\Sigma_\theta(x_t,t)$ entregan resultados similares, necesitando únicamente entrenar una red neuronal para predecir la media $\mu_\theta(x_t,t)\in\R^d$.
+
+Es importante notar que nada garantiza, en ninguno de los dos casos, que la covarianza fijada $\Sigma_\theta(x_t,t)$ sea igual a la covarianza realmente buscada, $\var{q(x_{t-1}|x_t)}$, la cual es desconocida\footnote{Ya que no se conoce la distribución $q_0=\ptrue$. Si se conociera, se podría obtener $q(x_{t-1}|x_t)$ usando $q(x_{t-1}|x_t,x_0)$}. En \cite{nichol2021improved} muestran que aprender también la varianza $\Sigma_\theta(x_t,t)$ permite generar muestras en menos pasos sin afectar considerablemente la calidad (ver \autoref{sec:learneable_variance}).
+
+Como se verá en la próxima subsección, la función de pérdida (ELBO) puede tomar diferentes formas equivalentes, por lo que, si bien ahora se está entrenando un modelo para predecir la media de $x_{t-1}$ conociendo $x_t$, también se podrá formular el problema para buscar el ruido $\epsilon_t$ insertado a $x_0$ en el tiempo $t$ e incluso se podrá buscar directamente $x_0$.
+
+\subsubsection{ELBO y función objetivo}
+
+Recordando que los modelos de difusión son una MHVAE con condiciones específicas, se puede utilizar la expresión dada en \eqref{eq:elbo_mhvae} para obtener una ELBO conveniente para los modelos de difusión:
+
+\begin{teo}[ELBO para DDPM]
+    \label{teo:elbo_ddpm}
+    Para un modelo de difusión genérico\footnote{No se hace uso de las transiciones dadas en el lado derecho de \eqref{eq:ddpm_forward}.} factorizado como en \eqref{eq:ddpm_forward} y \eqref{eq:ddpm_backward}, su ELBO viene dada por:
+
+    \begin{equation}
+        \label{eq:elbo_ddpm}
+        \underbrace{\E{q(x_1|x_0)}{\log p_\theta(x_0|x_1)}}_{\text{término de reconstrucción}} - \underbrace{\KL{q(x_T|x_0)}{p(x_T)}}_{\text{prior matching}} - \sum_{t=2}^T \underbrace{\E{q(x_t|x_0)}{\KL{q(x_{t-1}|x_t,x_0)}{p_\theta(x_{t-1}|x_t)}}}_{\text{denoising matching}}
+    \end{equation}
+\end{teo}
+
+\begin{proof}
+    \pendiente{escribir.}
+\end{proof}
+
+El término de reconstrucción es el mismo que aparece en un VAE convencional y puede ser aproximado mediante estimaciones de Monte Carlo. Sin embargo, no se considerará en la optimización ya que se trabajará con una función objetivo simplificada. Por otra parte,el término de prior matching puede omitirse en el entrenamiento ya que es constante con respecto a los parámetros.
+
+Por último, los términos de denoising matching confirman la elección de las transiciones backward $p_\theta(x_{t-1}|x_t)$ gaussianas ya que permitirán tener una forma cerrada para este término. En particular, utilizando el \autoref{teo:kl_gaussians} para este caso particular, se obtiene que:
+
+\begin{align}
+    \KL{q(x_{t-1}|x_t,x_0)}{p_\theta(x_{t-1}|x_t)} & = \frac{1}{2}\left(\frac{\norm{\mu_q(x_0,x_t, t)-\mu_\theta(x_t,t)}^2}{\sigma_q^2(t)}+\trace{\identity{d}}-\log(1)-d\right) \\
+                                                   & = \frac{1}{2\sigma_q^2(t)} \norm{\mu_q(x_0,x_t, t)-\mu_\theta(x_t,t)}^2
+\end{align}
+
+Por lo tanto, considerando que se busca maximizar la ELBO en esperanza sobre $x_0\sim\ptrue(x_0)$ el problema de optimización asociado a DDPM se reduce a resolver una diferencia de cuadrados:
+
+\begin{prop}[problema de optimización DDPM ($\mu$-prediction)]
+    \label{prop:mu_prediction}
+
+    Para los modelos propuestos en \eqref{eq:ddpm_forward} y \eqref{eq:backward_transition}, la función predictora de la media $\mu_\theta(x_t,t)$ óptima viene dada por:
+
+    \begin{equation}
+        \mu_\theta^* = \argmin_{\mu_\theta} \sum_{t=2}^T \frac{1}{2\sigma_q^2(t)} \E{q(x_0,x_t)}{\norm{\mu_q(x_0,x_t, t)-\mu_\theta(x_t,t)}^2}
+    \end{equation}
+
+    donde se recuerda que $q(x_0,x_t)=q(x_0)q(x_t|x_0)$ con $q(x_0)\sim\ptrue(x_0)$ y $q(x_t|x_0)$ dado en \eqref{eq:forward_marginal}.
+\end{prop}
+
+Si bien la expresión a optimizar es lo suficientemente simple como para implementarla, es posible trabajar un poco más la expresión para disminuirle la carga al modelo paramétrico $\mu_\theta(x_t,t)$. Para esto, se verán dos reformulaciones equivalentes de este problema de optimización.
+
+\paragraph{Enfoque \texorpdfstring{$x_0$}{x0}-prediction}
+Notando que $\mu_q(x_0,x_t,t)$ en \eqref{eq:conditional_backward_params} es de la forma $c_1(t)x_0 + c_2(t)x_t$, entonces $\mu_\theta(x_t,t)$ se puede reparametrizar como $\mu_\theta(x_t,t)=c_1(t)x_\theta(x_t,t) + c_2(t)x_t$, donde ahora $x_\theta$ es otro modelo paramétrico que busca predecir $x_0$ a partir de $x_t$:
+
+\begin{prop}[problema de optimización DDPM ($x_0$-prediction)]
+    Para los modelos propuestos en \eqref{eq:ddpm_forward} y \eqref{eq:backward_transition}, la función predictora de la media $\mu_\theta(x_t,t)$ óptima es una combinación lineal entre $x_\theta$ y $x_t$ (comparar con \eqref{eq:conditional_backward_params}):
+
+    \begin{equation}
+        \mu_\theta(x_t,t) = \frac{\sqrt{\overline{\alpha}_{t-1}}(1-\alpha_t)}{1-\overline{\alpha}_t}x_\theta(x_t,t) + \frac{\sqrt{\alpha_t}(1-\overline{\alpha}_{t-1})}{1-\overline{\alpha}_t}x_t
+    \end{equation}
+
+    donde el modelo $x_\theta(x_t,t)$ resuelve el siguiente problema de optimización:
+
+    \begin{equation}
+        x_\theta^* = \argmin_{x_\theta} \sum_{t=2}^T \frac{\overline{\alpha}_{t-1}(1-\alpha_t)^2}{2\sigma_q^2(t)(1-\overline{\alpha}_t)^2} \E{q(x_0,x_t)}{\norm{x_0-x_\theta(x_t,t)}^2}
+    \end{equation}
+\end{prop}
+
+\begin{proof}
+    Considerando que $\mu_q(x_0,x_t,t)=c_1(t)x_0 + c_2(t)x_t$ y $\mu_\theta(x_t,t)=c_1(t)x_\theta(x_t,t) + c_2(t)x_t$ con $c_1,c_2$ dadas en \eqref{eq:conditional_backward_params}:
+
+    \begin{equation}
+        \norm{\mu_q(x_0,x_t,t)-\mu_\theta(x_t,t)}^2 = \norm{c_2(t)(x_0-x_\theta(x_t,t))}^2 = c_2(t)^2 \norm{(x_0-x_\theta(x_t,t))}^2
+    \end{equation}
+
+    Luego, basta sustituir esta expresión en la \autoref{prop:mu_prediction}.
+\end{proof}
+
+\paragraph{Enfoque \texorpdfstring{$\epsilon$}{epsilon}-prediction}
+
+Al igual que para el enfoque $x_0$-prediction, es posible reparametrizar el modelo $\mu_\theta$ usando otro modelo que aprenda el ruido $\epsilon(x_t)$ que se le inyectó a $x_0$ para obtener $x_t$. Para esto es útil notar que, según la \autoref{prop:forward_marginal}, $x_t|x_0\sim \sqrt{\overline{\alpha}_t}x_0 + \sqrt{1-\overline{\alpha}_t}\epsilon$ con $\epsilon\sim\gaussian{0}{\identity{d}}$:
+
+\begin{prop}[problema de optimización DDPM ($\epsilon$-prediction)]
+    \label{prop:epsilon_prediction}
+
+    Para los modelos propuestos en \eqref{eq:ddpm_forward} y \eqref{eq:backward_transition}, la función predictora de la media $\mu_\theta(x_t,t)$ óptima es combinación lineal entre $x_t$ y $\epsilon_\theta$:
+
+    \begin{equation}
+        \label{eq:ddpm_epsilon_prediction}
+        \mu_\theta(x_t,t) = \frac{1}{\sqrt{\alpha_t}}x_t - \frac{1-\alpha_t}{\sqrt{\alpha_t(1-\overline{\alpha}_t)}}\epsilon_\theta(x_t,t)
+    \end{equation}
+
+    donde el modelo $\epsilon_\theta(x_t,t)$ resuelve el siguiente problema de optimización:
+
+    \begin{equation}
+        \epsilon_\theta^*=\argmin_{\epsilon_\theta} \sum_{t=2}^T \frac{(1-\alpha_t)^2}{2\sigma_q^2(t)(1-\bar\alpha_t)\alpha_t} \E{q(x_0,x_t)}{ \norm{\epsilon(x_t) - \epsilon_\theta(x_t,t)}^2}
+    \end{equation}
+
+    Aquí se ha considerado que $\epsilon(x_t) = \frac{x_t-\sqrt{\overline{\alpha}_t x_0}}{\sqrt{1-\overline{\alpha}_t}}$.
+\end{prop}
+
+\begin{proof}
+    Basta probar que $\| \mu_\theta(x_t,t) - \mu_q(x_0,x_t,t) \|^2 = \frac{(1-\alpha_t)^2}{(1-\bar\alpha_t)\alpha_t} \| \epsilon - \epsilon_\theta(x_t,t) \|^2$ para $\mu_\theta$ descrito en el enunciado. Considerando que $x_t = \sqrt{\overline{\alpha}_t}x_0 + \sqrt{1-\overline{\alpha}_t}\epsilon(x_t)$, es posible despejar $x_0$ y obtener $x_0 = \frac{x_t - \sqrt{1-\overline{\alpha}_t}\epsilon(x_t)}{\sqrt{\overline{\alpha}_t}}$. Sustituyendo esta expresión en $\mu_q(x_0,x_t,t)$:
+
+    \begin{align}
+        \mu_q(x_0,x_t,t) & = \frac{\sqrt{\overline{\alpha}_{t-1}}(1-\alpha_t)}{1-\overline{\alpha}_t}\cdot\frac{x_t - \sqrt{1-\overline{\alpha}_t}\epsilon(x_t)}{\sqrt{\overline{\alpha}_t}} + \frac{\sqrt{\alpha_t}(1-\overline{\alpha}_{t-1})}{1-\overline{\alpha}_t}x_t \\
+                         & = \left(\frac{\sqrt{\overline{\alpha}_{t-1}}(1-\alpha_t)}{(1-\overline{\alpha}_t)\sqrt{\overline{\alpha}_t}} + \frac{\sqrt{\alpha_t}(1-\overline{\alpha}_{t-1})}{1-\overline{\alpha}_t}\right) x_t
+        -\frac{\sqrt{\overline{\alpha}_{t-1}}(1-\alpha_t)\sqrt{1-\overline{\alpha}_t}}{(1-\overline{\alpha}_t)\sqrt{\overline{\alpha}_t}}\epsilon(x_t)                                                                                                                     \\
+                         & = \left(\frac{1-\alpha_t}{(1-\overline{\alpha}_t)\sqrt{\alpha_t}} + \frac{\alpha_t - \alpha_t\overline{\alpha}_{t-1}}{(1-\overline{\alpha}_t)\sqrt{\alpha_t}}
+        \right)x_t - \frac{(1-\alpha_t)\sqrt{1-\overline{\alpha}_t}}{(1-\overline{\alpha}_t)\sqrt{\alpha_t}}\epsilon(x_t)                                                                                                                                                  \\
+                         & =\frac{1-\overline{\alpha}_t}{(1-\overline{\alpha}_t)\sqrt{\alpha_t}}x_t - \frac{1-\alpha_t}{\sqrt{1-\overline{\alpha}_t}\sqrt{\alpha_t}}\epsilon(x_t)                                                                                          \\
+                         & =\frac{x_t}{\sqrt{\alpha_t}} - \frac{1-\alpha_t}{\sqrt{(1-\overline{\alpha}_t)\alpha_t}}\epsilon(x_t)
+    \end{align}
+
+    donde en la tercera y cuarta igualdad se usó que $\alpha_t\overline{\alpha}_{t-1} = \overline{\alpha}_t$. Dado que $\mu_\theta$ es función de $x_t$, se puede reparametrizar como:
+
+    \begin{equation}
+        \mu_\theta(x_t,t) = \frac{x_t}{\sqrt{\alpha_t}} - \frac{1-\alpha_t}{\sqrt{(1-\overline{\alpha}_t)\alpha_t}}\epsilon_\theta(x_t,t)
+    \end{equation}
+
+    Luego:
+    \begin{align}
+        \left\| \mu_\theta(x_t,t) - \mu_q(x_0,x_t,t) \right\|^2 & = \left\| \left(\frac{x_t}{\sqrt{\alpha_t}} - \frac{1-\alpha_t}{\sqrt{(1-\overline{\alpha}_t)\alpha_t}}\epsilon_\theta(x_t,t)\right) - \left(\frac{x_t}{\sqrt{\alpha_t}} - \frac{1-\alpha_t}{\sqrt{(1-\overline{\alpha}_t)\alpha_t}}\epsilon(x_t)\right) \right\|^2 \\
+                                                                & = \frac{(1-\alpha_t)^2}{(1-\bar\alpha_t)\alpha_t} \| \epsilon(x_t) - \epsilon_\theta(x_t,t) \|^2
+    \end{align}
+
+    que es lo que se quería probar.
+\end{proof}
+
+Si bien este enfoque parece ser el más complicado, en \cite{ho2020denoising} afirman que es el que entregó mejores resultados. Además, ellos consideran una versión simplificada de la función objetivo:
+
+\begin{itemize}
+    \item Los ponderadores de las esperanzas son omitidos para que todos los sumandos tengan el mismo peso. En \cite{song2022denoising} justifican esta decisión notando que si los modelos $\epsilon_\theta(x_t,t)$ son independientes en la segunda variable (i.e., se tiene un modelo para cada tiempo), entonces el óptimo global es alcanzado optimizando localmente cada sumando, por lo que la función objetivo se vuelve independiente de los ponderadores.
+    \item La suma sobre $t\in\{2,\ldots,T\}$ es cambiada por una evaluación estocástica del tiempo. Para esto consideran una variable discreta uniforme $t\sim\text{Uniform}\left(\{1,\ldots,T\}\right)$ y calculan un único sumando de forma aleatoria en cada iteración del entrenamiento. Además, al agregar $t=1$ a la distribución, se vuelve a considerar el término de reconstrucción omitido al comienzo.
+\end{itemize}
+
+Con estas modificaciones, la función objetivo que proponen minimizar en \cite{ho2020denoising} con el enfoque $\epsilon$-prediction es la siguiente:
+
+\begin{equation}
+    \label{eq:ddpm_simple}
+    L_{\text{simple}}(\theta) = \E{t\sim\text{Uniform}\left(\{1,\ldots,T\}\right),x_0\sim\ptrue,\epsilon\sim\gaussian{0}{\identity{d}}}{\norm{\epsilon-\epsilon_\theta(\sqrt{\overline{\alpha}_t}x_0+\sqrt{1-\overline{\alpha}_t}\epsilon,t)}}
+\end{equation}
+
+donde además se consideró que $q(x_t|x_0)\sim \sqrt{\overline{\alpha}_t}x_0 + \sqrt{1-\overline{\alpha}_t}\epsilon$ con $\epsilon\sim\gaussian{0}{\identity{d}}$ para sustituir $x_t$ en $\epsilon_\theta(x_t,t)$ y cambiar la esperanza $\E{q(x_t|x_0)}{\cdot}$ por $\E{\epsilon\sim\gaussian{0}{\identity{d}}}{\cdot}$.
+
+\subsubsection{Algoritmos de entrenamiento y sampling}
+
+Utilizando el enfoque $\epsilon$-prediction con la función de pérdida simplificada \eqref{eq:ddpm_simple} el algoritmo de entrenamiento consiste en aproximar todas las esperanzas de $L_\text{simple}$ con una estimación de Monte Carlo simple, tal como lo muestra el \autoref{alg:ddpm_training}.
+
+\begin{algorithm}
+    \caption{Entrenamiento del modelo DDPM}
+    \label{alg:ddpm_training}
+    \begin{algorithmic}[1]
+        \Require muestras de entrenamiento provenientes de $\ptrue$.
+        \Require Modelo $\epsilon_\theta$ (no entrenado) y secuencia $(\alpha_t)_{t=1}^T$.
+        \While{no haya convergencia}
+        \State Obtener muestra de entrenamiento $x_0\sim\ptrue(x_0)$.
+        \State Generar $t\sim\text{Uniform}\left(\{1,\ldots,T\}\right)$.
+        \State Generar $\epsilon\sim\gaussian{0}{\identity{d}}$.
+        \State Actualizar parámetros de $\epsilon_\theta$ según $\nabla_\theta \norm{\epsilon-\epsilon_\theta(\sqrt{\overline{\alpha}_t}x_0+\sqrt{1-\overline{\alpha}_t}\epsilon,t)}$
+        \EndWhile
+    \end{algorithmic}
+\end{algorithm}
+
+Por otra parte, para la generación de muestras es suficiente samplear del prior terminal y luego aplicar el proceso backward aprendido. Para esto es necesario recordar que la media $\mu_\theta$ del enfoque $\epsilon$-prediction viene dada por:
+
+\begin{equation}
+    \mu_\theta(x_t,t) = \frac{1}{\sqrt{\alpha_t}}x_t - \frac{1-\alpha_t}{\sqrt{\alpha_t(1-\overline{\alpha}_t)}}\epsilon_\theta(x_t,t)
+\end{equation}
+
+mientras que la matriz de covarianzas se fijó en \eqref{eq:backward_covariance} como $\Sigma_\theta(x_t,t):=\sigma_q^2(t)\identity{d}$. A este procedimiento de generación se le suele llamar \textit{ancestral sampling} y se encuentra detallado en el \autoref{alg:ddpm_sampling}. Es importante mencionar que al comenzar el proceso reverso desde la distribución prior se está induciendo un error en la generación ya que el proceso de difusión en el \autoref{alg:ddpm_training} solo se ejecuta hasta un horizonte de tiempo finito, mientras que la distribución invariante $\gaussian{0}{\identity{d}}$ solo es alcanzada cuando $T\to\infty$. Este es un problema intrínseco de los modelos de difusión y puede generar problemas en la generación de muestras tal como lo estudian en \cite{debortoli2023diffusion}. En el \autoref{eot_sbp} se entregará una formulación más robusta mediante el problema del puente de Schrödinger, donde se estudiará el problema de transformar una distribución en otra en un horizonte de tiempo finito.
+
+\begin{algorithm}
+    \caption{Ancestral sampling}
+    \label{alg:ddpm_sampling}
+    \begin{algorithmic}[1]
+        \Require modelo $\epsilon_\theta$ (entrenado) y secuencia $(\alpha_t)_{t=1}^T$ que se usó durante el entrenamiento.
+        \State Generar $x_T\sim \pprior(x_T)=\gaussian{0}{\identity{d}}$.
+        \For{$t$ desde $T$ hasta 1}
+        \If{$t>1$}
+        \State generar $z\sim\gaussian{0}{\identity{d}}$
+        \Else
+        \State $z \gets 0$
+        \EndIf
+        \State $x_{t-1} \gets \frac{1}{\sqrt{\alpha_t}}\left(x_t-\frac{1-\alpha_t}{\sqrt{1-\overline{\alpha}_t}}\epsilon_\theta(x_t,t)\right) + \sigma_q(t) z$
+        \EndFor
+        \State \Return $x_0$
+    \end{algorithmic}
+\end{algorithm}
+
+En la \autoref{fig:dm/ddpm_cifar10} se puede observar la evolución del proceso de denoising en cada etapa del \autoref{alg:ddpm_sampling}.
+
+\insertimage{dm/ddpm_cifar10}{0.7}{Proceso de generación de muestras para un modelo entrenado en CIFAR-10. Cada fila es una muestra distinta y cada columna muestra la predicción actual en un tiempo $t$. Imagen obtenida desde \cite{ho2020denoising}.}
+
+Una implementación paso a paso del modelo DDPM puede encontrarse en \cite{huggingface_annotated_diffusion_2022}, donde adicionalmente se implementa la arquitectura U-Net (ver \cite{ronneberger2015unet}) modificada para modelos de difusión.
+
+\subsection{Arquitectura U-Net para modelos de difusión}
+\label{dm/discrete_dm/unet}
+
+Como se ha visto hasta el momento, para aprender $p_\theta(x_{t-1}|x_t)\sim\gaussian{\mu_\theta(x_t,t)}{\Sigma_\theta(x_t,t)}$ se suele entrenar un modelo paramétrico que aprenda directamente $\mu_q$, la muestra original $x_0$, el ruido $\epsilon$ o el score de la transición. En cualquiera de estos casos, el modelo es una función de la forma $\R^d\times [0,T]\to\R^d$. Si bien a priori es posible utilizar cualquier arquitectura neuronal, al trabajar con imágenes se suele utilizar una modificación de la arquitectura U-Net, propuesta originalmente para segmentación de imágenes en \cite{ronneberger2015unet}, cuya arquitectura original se puede observar en la \autoref{fig:dm/u_net_original}.
+
+\insertimage{dm/u_net_original}{0.7}{Arquitectura U-Net original para segmentación de imágenes. Imagen obtenida desde \cite{ronneberger2015unet}.}
+
+En esta sección se verán las modificaciones usuales que se aplican sobre la arquitectura U-Net para adaptarla a modelos de difusión. Es importante destacar que se han propuesto distintas variantes para esta arquitectura, donde el factor común entre ellas son los bloques que las componen. Las principales características son las siguientes:
+
+\subsubsection{U-Net original}
+
+\begin{itemize}
+	\item Se utiliza una red completamente convolucional, donde la parte descendente e la U (ver \autoref{fig:dm/u_net_original}) reduce la resolución a medida que aumenta la cantidad de canales. La parte ascendente de la U realiza el proceso reverso.
+	\item En la parte ascendente se realizan conexiones residuales (\textit{skip-connections}) usando los bloques homólogos de la parte descendente.
+\end{itemize}
+
+\subsubsection{Modificaciones para modelos de difusión}
+\begin{itemize}
+	\item El tiempo de denoising $t$ es sumado al final de cada bloque convolucional. Para esto se utiliza un embedding temporal sinusoidal similar al usado en la arquitectura \textit{Transformer} (ver \cite{vaswani2023attention}).
+	\item Posterior a cada bloque convolucional, luego de sumar el embedding temporal y antes de la conexión residual, se aplica una capa de \textit{multi-head self-attention} similar a la usada en la arquitectura de \textit{Vision Transformer} (ViT, ver \cite{dosovitskiy2021image}).
+	\item Como función de activación se suele usar GELU (ver \cite{hendrycks2023gaussian}) y SiLU (ver \cite{elfwing2017sigmoidweighted}), y normalización por grupos luego de cada convolución (ver \cite{hafner2018tfdistvae}).
+\end{itemize}
+
+Una visualización de esta arquitectura modificada puede verse en \autoref{fig:dm/u_net_dm}. En \cite{nichol2021improved} y \cite{dhariwal2021diffusion} se proponen algunas mejoras adicionales sobre esta arquitectura. En particular, los autores de \cite{dhariwal2021diffusion} proponen los siguientes cambios con respecto a la arquitectura usada en el modelo original de DDPM:
+
+\begin{itemize}
+	\item Aumentar la profundidad a cambio de ancho, manteniendo una cantidad de parámetros similar.
+	\item Aumentar el número de cabezales.
+	\item Usar capas de atención en múltiples resoluciones de la U-Net.
+	\item Usar los bloques residuales usados en la BigGAN.
+	\item Normalizar las conexiones residuales por $\frac{1}{\sqrt{2}}$.
+\end{itemize}
+
+\insertimage{dm/u_net_dm}{1}{Arquitectura U-Net usada para modelos de difusión. El bloque negro representa el input (imagen RGB) mientras que los bloques rosados son bloques convolucionales. Los bloques celestes y verdes son bloques de \textit{downsampling} y \textit{upsampling} respectivamente. Los bloques naranjos son bloques de atención. Por último, las flechas grises son las conexiones residuales. Imagen obtenida desde \cite{erdem2023stepByStepVisualIntroductionToDiffusionModels}.}
+
+Al hacer estos cambios notaron que, si bien el intercambio de ancho por profundidad mejoraba el rendimiento del modelo, también aumentaba el el tiempo de entrenamiento necesario para alcanzar el mismo rendimiento en un modelo más ancho. Además, notaron que al aumentar el número de cabezales mejoraba considerablemente el FID. De todos modos, es importante destacar que prácticamente todos los modelos tienen diferentes implementaciones de las arquitecturas U-Net y no existe una arquitectura por defecto. En la \autoref{fig:dm/u_net_dm_blocks} se observa un ejemplo de arquitectura tipo U-Net con el detalle de sus componentes. Por último, esta arquitectura por lo general se entrena usando Adam y EMA sobre los parámetros.
+
+\begin{figure}
+    \caption{Estructura de los bloques de la \autoref{fig:dm/u_net_dm}. Imágenes obtenidas desde \cite{erdem2023stepByStepVisualIntroductionToDiffusionModels}.}
+    \label{fig:dm/u_net_dm_blocks}
+	\centering
+	\includegraphics[width=0.24\textwidth]{images/dm/u_net_dm_1}
+	\includegraphics[width=0.24\textwidth]{images/dm/u_net_dm_2}
+	\includegraphics[width=0.24\textwidth]{images/dm/u_net_dm_3}
+	\includegraphics[width=0.24\textwidth]{images/dm/u_net_dm_4}
+\end{figure}
+
+\pendiente{nombrar y explicar DiT (SOTA).}
+
+\subsection{Mejoras al modelo DDPM}
+\label{dm/discrete_dm/improvements}
+
+En esta subsección se entregarán algunas variantes del modelo propuesto por \cite{ho2020denoising}.
+
+\subsubsection{iDDPM}
+
+En \cite{nichol2021improved}, investigadores en OpenAI realizaron un estudio conocido como \textit{Improved DDPM} donde muestran que aprender la varianza $\Sigma_\theta(x_t,t)$ del proceso backward $p_\theta(x_{t-1}|x_t)$ en \eqref{eq:backward_transition} y utilizar un \textit{variance scheduler} coseno mejora el proceso de inferencia y aumenta la verosimilitud. Además, dan un primer indicio de una \textit{neural scaling law} para DDPM.
+
+\paragraph{Varianza \texorpdfstring{$\Sigma_\theta(x_t,t)$}{} aprendible}
+\label{sec:learneable_variance}
+
+El modelo original de DDPM, \cite{ho2020denoising}, fija la varianza $\Sigma_\theta(x_t,t)$ del modelo reverso $p_\theta(x_{t-1}|x_{t})$ a ser isotrópica: $\Sigma_\theta(x_t,t) := \sigma^2_\theta(x_t,t) \identity{d}$, donde para $\sigma^2_\theta(x_t,t)$ se prueban dos opciones, ambas independientes de $x_t$:
+
+\begin{itemize}
+    \item $\sigma^2_\theta(x_t,t) = \sigma_q^2(t)$ de acuerdo a la varianza del proceso reverso condicional a $x_0$, $q(x_{t-1}|x_t,x_0)$ (ver \eqref{eq:backward_covariance}). Fijar esta covarianza permite simplificar la divergencia $\KL{q(x_{t-1}|x_t,x_0)}{p_\theta(x_{t-1}|x_t)}$ en la función de costo \eqref{eq:elbo_ddpm}, llegando a un problema de mínimos cuadrados entre las medias de ambas distribuciones.
+    \item $\sigma^2_\theta(x_t,t) = 1-\alpha_t$ de acuerdo a la varianza del proceso forward $q(x_t|x_{t-1})$ (ver \eqref{eq:ddpm_forward}).
+\end{itemize}
+
+Dado que ninguna de las dos varianzas es la verdadera, en \cite{nichol2021improved} deciden modelar $\sigma^2_\theta(x_t,t)$ como una interpolación de estos dos valores en el espacio logarítmico:
+
+\begin{equation}
+    \label{eq:improved_variance}
+    \sigma^2_\theta(x_t,t):= \exp\parent{v_\theta(x_t,t)\log (1-\alpha_t) + (1-v_\theta(x_t,t))\log \sigma^2_q(t)}
+\end{equation}
+
+donde $v_\theta(x_t,t)$ es un modelo neuronal. A priori, la varianza aprendida $\sigma^2_\theta(x_t,t)$ podría estar fuera del intervalo formado por $\sigma_q^2(t)$ y $1-\alpha_t$, pero eso no ocurre en la práctica, mostrando que interpolar entre estos valores es una buena parametrización.
+
+\paragraph{Sampling con menos iteraciones}
+
+Dado que el proceso forward por lo general tiene muchas iteraciones ($T=1000$ en DDPM), el proceso reverso reverso tendrá la misma cantidad de iteraciones, haciendo que la generación sea un proceso lento. En \cite{nichol2021improved} descubrieron, de forma inesperada, que al permitir entrenar la varianza $\Sigma_\theta(x_t,t)$ es posible obtener muestras a partir de un modelo ya entrenado usando menos pasos de los que se usaron durante el entrenamiento y sin la necesidad de hacer \textit{fine-tuning}. Las muestras que se generan de esta forma siguen siendo de alta calidad y permite generar imágenes en segundos en vez de minutos.
+
+Para disminuir la cantidad de iteraciones durante la generación, consideraron una sub-secuencia decreciente de tiempos $S=(S_t)_{t=1}^{|S|}\subset\{0,\ldots,T\},\,\{0,T\}\in S$. Dado que $v_\theta(x_{S_t},S_t)$ es el parámetro que define $\sigma_\theta(x_{S_t},S_t)$ mediante interpolación de las varianzas $1-\alpha_{S_t}$ y $\sigma_q^2$ (ver \eqref{eq:improved_variance}), este parámetro será invariante al reescalar los rangos en procesos de difusión más cortos por lo que se puede hacer el proceso reverso utilizando únicamente los tiempos de $S$ y generando desde $p_\theta(x_{S_{t-1}}|x_{S_t})$ a través de $\gaussian{\mu_\theta(x_{S_t}, S_t)}{\Sigma_\theta(x_{S_t}, S_t)}$.
+
+Con esta técnica, se puede mantener la calidad de generación incluso tomando sobconjuntos $S$ de largo 100. Al intentar hacer esto mismo en el modelo original de DDPM hay una pérdida considerable de calidad al disminuir el número de iteraciones.
+
+\paragraph{Función objetivo híbrida}
+
+La función objetivo $L_{\text{simple}}$ (ver \eqref{eq:ddpm_simple}) usada en DDPM solo es válida cuando se fija $\Sigma_\theta(x_t,t) = \sigma_q^2(t)\identity{d}$. Para un modelo que aprende la varianza, se deben volver a computar las expresiones para las divergencias en la ELBO (ver \eqref{eq:elbo_ddpm}). Sin embargo, en \cite{nichol2021improved} obtienen dificultades para optimizar esta nueva función objetivo y observan que la media del proceso reverso, $\mu_\theta$, es más importante que la varianza $\Sigma_\theta$. Por lo tanto, proponen mantener la función simplificada $L_{\text{simple}}$ (que estima bien la media) y combinarla cónicamente con la ELBO real:
+
+\begin{equation}
+    L_{\text{híbrido}} := L_{\text{simple}} - \lambda\cdot\elbo
+\end{equation}
+
+donde $\lambda>0$ es un ponderador y la $\elbo$ de un DM está dada en \eqref{eq:elbo_ddpm}.
+
+Por otra parte, si bien es esperable alcanzar mayores verosimilitudes optimizando directamente la ELBO, aquí se observa que se obtienen mejores resultados optimizando esta función objetivo híbrida. Esto es importante ya que un trabajo reciente mostró que pequeñas mejoras en la log-verosimilitud pueden tener un gran impacto en la calidad de las generaciones y las representaciones aprendidas.
+
+\paragraph{Cosine scheduler}
+
+Otra observación importante es que al usar un \textit{variance scheduler} lineal como en \cite{ho2020denoising} la difusión ocurre muy rápido, destruyendo una gran cantidad de información al comienzo del proceso. En la \autoref{fig:dm/linear_cosine_scheduler} (arriba) se puede observar este fenómeno.
+
+\insertimage{dm/linear_cosine_scheduler}{0.7}{(arriba) Proceso de difusión asociado a un scheduler lineal. (abajo) Proceso de difusión asociado a un scheduler coseno.}
+
+Para corregir este problema, proponen un scheduler para $(\bar\alpha_t)_{t=1}^T$\footnote{Esto ya que al entrenar usando \eqref{prop:forward_marginal}, $\alpha_t$ es un parámetro más natural para definir que $\alpha_t$. Sin embargo, ambas formas son equivalentes ya que $\alpha_t=\frac{\bar\alpha_t}{\bar\alpha_{t-1}}$.} que inyecte el ruido más lento:
+
+\begin{equation}
+    \bar\alpha_t = \frac{f(t)}{f(0)},\qquad f(t)=\cos^2\parent{\frac{\frac{t}{T}+s}{1+s}\cdot\frac{\pi}{2}}
+\end{equation}
+
+Se elige este funcional ya que tiene un comportamiento lineal en el centro y en los extremos del intervalo $[0,T]$ el decaimiento es más suave.
+
+Es importante notar que el nivel de corrupción visual obtenido en una muestra de $q(x_t|x_0)$ (para un cierto nivel de ruido $1-\bar\alpha_t$) depende de la resolución de la imagen, por lo que este scheduler puede dejar de ser útil en otras resoluciones.
+
+\paragraph{Neural scaling law para DM}
+
+En los últimos años se ha visto que algunos modelos basados en redes neuronales siguen un patrón claro al comparar el rendimiento del modelo con el número de parámetros y la cantidad de datos. Por ejemplo, en \cite{kaplan2020scaling} estudian como cambia la entropía cruzada en un \textit{large language model} (LLM) cuando se utiliza una arquitectura tipo \textit{transformer} y encuentran relaciones en forma de potencia entre esta y el número de parámetros, el tamaño del dataset y la capacidad de cómputo del entrenamiento. En \cite{farhani2022momentum} generalizan el estudio para estudiar el transformer como modelo autorregresivo en otras modalidades como imagen o video.
+
+En \cite{nichol2021improved} notaron que, usando la función objetivo $L_{\text{híbrido}}$, el modelo DDPM mejora de forma predecible al aumentar el cómputo de entrenamiento. Más específicamente, observan que el FID escala siguiendo una ley de potencia, igual que para la entropía cruzada en un LLM. Para la log-verosimilitud, no se observó un patrón claro, sugiriendo que el aumento de cómputo durante el entrenamiento no favorece tan notoriamente al aumento de la verosimilitud. Es importante mencionar que tener una ley que prediga el rendimiento de una familia de modelos generativos es una propiedad súmamente valiosa, lo que motiva a usar las buenas técnicas empleadas en los modelos de difusión en enfoques más generales como el problema puente de Schrödinger estudiado en el \autoref{eot_sbp}.
+
+\subsubsection{Procesos de difusión no markovianos}
+
+Trabajo paralelo al DDPM mejorado. DDIM produce mejores muestras con menos de 50 pasos pero peores cuando se usan mas de 50 (\cite{nichol2021improved}).
+
+Una de las principales desventajas de los modelos de difusión es su velocidad para generar muestras. Dado que el proceso de denoising está compuesto por varias etapas, la generación de muestras es mucho más lenta que la generación con GANs.
+
+Los autores de \cite{song2022denoising} notaron que durante el cálculo de la función de pérdida del modelo DDPM, el proceso (markoviano) forward solo es usado a través de las marginales condicionales $q(x_t|x_0),\,t\in\{1\ldots,T\}$ y no a través de la distribución conjunta $q(x_{1:T}|x_0)$. Con esta observación, ellos definieron una nueva familia $\mathcal{Q} = \left(q_\sigma(x_{1:T}|x_0)\right)_{\sigma\in\mathbb{R}_+^T}$ de procesos forward, tales que sus marginales condicionales $q_\sigma(x_t|x_0)$ coincidieran con las del modelo DDPM, es decir:
+
+\begin{equation}
+    q_\sigma(x_t|x_0) = \mathcal{N}\left(\sqrt{\overline{\alpha}_t}x_0,(1-\overline{\alpha}_t)I_d\right)
+\end{equation}
+
+Los procesos forward de la familia $\mathcal{Q}$ son dados de forma implícita (de ahí el nombre del modelo) mediante la imposición de la forma que deben tener sus procesos reversos:
+
+\begin{equation}
+    q_\sigma(x_{t-1}|x_t,x_0)\sim\mathcal{N}\left(f_{\sigma_t}(x_0,x_t),\sigma_t^2 I_d\right)
+\end{equation}
+
+donde $f_{\sigma_t}:\mathbb{R}^d\times\mathbb{R}^d\to\mathbb{R}^d$ es una función con una forma precisa  para que se logre la igualdad de las marginales condicionales $q_\sigma(x_t|x_0)$ que se nombró más arriba.
+
+En este trabajo argumentan que, dado que el nuevo proceso forward es indistinguible del proceso forward de DDPM durante el cálculo de la función de pérdida (ya que $q_\sigma(x_t|x_0)$ y $q(x_t|x_0)$ coinciden), entonces el modelo entrenado sirve tanto para el denoising de DDPM como para el denoising de este nuevo proceso de difusión (más específicamente, ellos muestran una equivalencia en el problema de optimización bajo ciertas hipótesis débiles). Por lo tanto, se puede usar la red neuronal ya entrenada en DDPM como su hubiese sido entrenada para este nuevo proceso.
+
+Considerando que la red neuronal $\epsilon_\theta(x_t,t)$ busca predecir el ruido $\epsilon$ inyectado a $x_0$ en la etapa $t$, el proceso de generación de muestras que ellos proponen es el siguiente:
+
+\begin{itemize}
+    \item Generar $x_T\sim q_{\text{prior}}(x_T)$.
+    \item Para $t$ descendiente desde $T$ hasta $2$:
+          \begin{itemize}
+              \item Realizar una estimación de $x_0$ usando $x_t$:
+
+                    \begin{equation}
+                        x_t \approx \sqrt{\overline{\alpha}_t}x_0 + \sqrt{1-\overline{\alpha}_t}\epsilon_\theta(x_t,t) \implies \hat{x}_0 \approx \frac{x_t - \sqrt{1-\overline{\alpha}_t}\epsilon_\theta(x_t,t)}{\sqrt{\overline{\alpha}_t}}
+                    \end{equation}
+
+              \item Realizar una etapa de denoising mediante el proceso $q_\sigma$ que se esté considerando: $p_\theta(x_{t-1}|x_t) = q_\sigma(x_{t-1}|x_t,\hat{x}_0)$.
+          \end{itemize}
+\end{itemize}
+
+La formulación de $q_\sigma(x_{t-1}|x_t,x_0)$ permite definir diferentes procesos de denoising (y respectivos procesos forward). Eligiendo un cierto parámetro de proceso $\sigma\in\mathbb{R}^d_+$ es posible hacer el proceso markoviano y recuperar la formulación original de DDPM. Sin embargo, el modelo de interés se consigue cuando $\sigma_t\to 0,\,\forall t\in\{1,\ldots, T\}$ ya que de este modo, el proceso reverso se vuelve determinista. Este es el modelo que en el paper denominan DDIM.
+
+Este determinismo permite, al menos en teoría, obtener directamente $x_0$ a partir de $x_T$. Si bien esto no funciona bien en la práctica debido a la alta complejidad del proceso de difusión, es posible realizar el proceso reverso en menos pasos bajo la justificación de que $x_T$ define totalmente $x_0$ desde un comienzo.
+
+De este modo, los autores proponen tomar una subsecuencia temporal $\tau$ de $(1\ldots T)$ e iterar el proceso reverso igual que antes solo que únicamente en los tiempos indicados por $\tau$:
+
+\begin{itemize}
+    \item Generar $x_T\sim q_{\text{prior}}(x_T)$.
+    \item Para $t$ descendiente desde $|\tau|$ hasta 2:
+          \begin{itemize}
+              \item Realizar una estimación de $x_0$ usando $x_{\tau_t}$ igual que en el proceso generativo definido más arriba.
+              \item Realizar una etapa de denoising mediante el proceso $q_{\sigma,\tau}$ que se esté considerando: $p_\theta(x_{\tau_{t-1}}|x_{\tau_t}) = q_{\sigma,\tau}(x_{\tau_{t-1}}|x_{\tau_t},\hat{x}_0)$, donde $q_{\sigma,\tau}$ es lo mismo que $q_\sigma$ solo que para tiempos en $\tau$ en vez de $\{0,\ldots,T\}$.
+          \end{itemize}
+\end{itemize}
+
+Con esto, el proceso de denoising toma muchos menos pasos que en la propuesta original de \cite{ho2020denoising}.
+
+Por otra parte, este determinismo está íntimamente relacionado con la \textit{probability flow ODE} de los modelos de difusión en tiempo continuo (ver \autoref{dm/continuous_dm/sde}), la cual a su vez es usada para mostrar que los modelos de difusión aprenden (o al menos aproximan) un mapa de transporte óptimo entre la distribución de los datos y la distribución prior en la \autoref{ot/dynamic/dm}. En consecuencia, esta es una primera conexión directa con el problema estático del puente de Schrödinger estudiado en la \autoref{eot_sbp/static_sbp}.
+
+\subsubsection{Generación condicional}
+
+Dada una distribución condicional sobre los datos, $q(y|x_0)$, es posible generar muestras de la distribución condicional $q(x_0|y)$ entrenando un modelo de difusión condicional $p_\theta(x_{0:T}|y)=p(x_T)\prod_{t=1}^T p_\theta(x_{t-1}|x_t,y)$, donde el condicionamiento puede ser inyectada a la red mediante un embedding vectorial de $y$ concatenado al embedding temporal de $t$.
+
+\paragraph{Classifier-guidance}
+
+En \cite{dhariwal2021diffusion} estudian un método alternativo para el caso donde $y$ es una asignación de clase\footnote{Es decir, es una medida discreta que concentra toda su masa en un único punto.}. Este método, propuesto originamente en \cite{sohldickstein2015deep}, consiste en guiar la generación de un modelo de difusión incondicional utilizando un clasificador\footnote{Este es modelado como una red neuronal que recibe, al igual que $p_\theta$, $x_t$ y un embedding (p.g. sinusoidal) de $t$.} que a cada perturbación $x_t$ le asocia la clase a la que pertenece la muestra $x_0$ que se perturbó para obtener $x_t$.
+
+El resultado que demostraron en \cite{dhariwal2021diffusion} para guiar la generación de un DDPM incondicional es el siguiente:
+
+\begin{prop}
+    \label{prop:classifier_guidance}
+    Dado un DDPM con transiciones $p_\theta(x_t|x_{t+1})$ y un clasificador $p_\phi(y|x_t,t)$ aproximando a $q(y|x_0(x_t))$. Considerando que ambos modelos están entrenados, las transiciones $q(x_t|x_{t+1},y)$ del proceso reverso condicional se puede aproximar por:
+
+    \begin{equation}
+        \label{eq:class_guidance_joint}
+        p_{\theta,\phi}(x_t|x_{t+1},y) := Z(x_{t+1},t,y) p_\theta(x_t|x_{t+1})p_\phi(y|x_t)
+    \end{equation}
+
+    Si bien esta distribución es intratable en general, se puede aproximar por una gaussiana cuando $\log p_\theta(y|x_t)$ tiene baja curvatura comparado con $\Sigma_\theta$:
+
+    \begin{equation}
+        p_{\theta,\phi}(x_t|x_{t+1},y) \approx \gaussian{\mu_g}{\Sigma_\theta},
+        \quad\text{donde}\quad
+        \mu_g := \mu_\theta + \Sigma_\theta \cdot \score{x_t}{p_\phi(y|x_t)}|_{x_t=\mu}
+    \end{equation}
+\end{prop}
+
+\begin{proof}
+    Pendiente primera parte.
+
+    Para la segunda parte, se trabajarán ambos factores de forma independiente. Considerando que $p_\theta(x_t|x_{t+1})\sim\gaussian{\mu_\theta}{\Sigma_\theta}$ (ver \eqref{eq:backward_transition}) y realizando una aproximación de Taylor de primer orden sobre $x_t\mapsto \log p_\phi(y|x_t)$ alrededor de $x_t=\mu$:
+    \begin{align}
+        \log & p_{\theta,\phi}(x_t|x_{t+1},y) \approx \log p_\theta(x_t|x_{t+1}) + \log p_\phi(y|x_t)                                                                                                          \\
+             & = \parent{-\frac{1}{2}\parent{x_t-\mu_\theta}^\top \Sigma_\theta^{-1}\parent{x_t-\mu_\theta} + \cte} + \parent{\underbrace{\log p_\phi(y|x_t)|_{x_t=\mu_\theta}}_{\cte}  +  (x_t-\mu_\theta) g} \\
+             & = -\frac{1}{2} \parent{x_t-\mu_\theta-\Sigma_\theta g}^\top \Sigma^{-1} \parent{x_t-\mu_\theta-\Sigma_\theta g} + \cte
+    \end{align}
+
+    Donde se usó la variable auxiliar $g(x_t,y) = \score{x_t}{p_\phi(y|x_t)_{x_t=\mu_\theta}}$. De la última igualdad se identifica que $p_{\theta,\phi}(x_t|x_{t+1},y) \approx\gaussian{\mu_\theta + \Sigma_\theta g}{\Sigma_\theta}$.
+\end{proof}
+
+Por lo tanto, para generar una muestra desde $q(x_0|y)$, se debe ejecutar el proceso reverso incondicional y cada etapa de denoising $x_t$ obtenida se debe perturbar según $x_t\mapsto \tilde x_t = x_t + \Sigma_\theta \cdot \score{x_t}{p_\phi(y|x_t)}|_{x_t=\mu}$ para luego pasar a etapa $t-1$ usando $\tilde x_t$ en vez de $x_t$. Esta técnica es conocida como \textit{classifier guidance} y permitió que, por primera vez, los modelos de difusión entregaran mejores resultados que las GANs. Más específicamente, logran obtener mejores resultados que StyleGAN-2 y BigGAN-deep utilizando la misma capacidad computacional.
+
+La modificación que realiza esta técnica sobre el proceso de sampling estándar de DDPM también es interpretable. Considerando que $x_t$ se obtiene a partir del modelo generativo incondicional, al sumar $\Sigma_\theta \cdot \score{x_t}{p_\phi(y|x_t)}|_{x_t=\mu}$ se le está indicando a la muestra hacia dónde desplazarse para maximizar $x_t\mapsto \log p_\phi(y|x_t)$.
+
+Por último, es importante aclarar que si bien este mecanismo permite guiar un proceso de difusión incondicional, también se puede usar sobre modelos de difusión condicionales, funcionando ambos métodos de forma complementaria. Además, el clasificador puede ser cambiado por modelos más complejos que permitan condicionar sobre texto (p.g., usando un modelo CLIP condicional al ruido).
+
+De acuerdo a \autoref{prop:classifier_guidance}, se puede obtener una muestra aproximada para el proceso reverso condicional $q(x_t|x_{t+1},y)$ perturbando aditivamente una muestra $x_t$ generada desde el proceso incondicional $p_\theta(x_t|x_{t+1})$. Al generar muestras de esta forma, se observa que el clasificador le asigna una probabilidad aceptable a las muestras generadas pero la imagen generada no corresponde visualmente a una instancia de la clase. Para trabajar este problema, es posible darle más peso al gradiente que perturba $x_t$, teniendo la siguiente perturbación para la generación condicional:
+
+\begin{equation}
+    x_t\mapsto \tilde x_t = x_t + \Sigma_\theta \parent{s\cdot \score{x_t}{p_\phi(y|x_t)}|_{x_t=\mu}}
+\end{equation}
+
+donde $s>0$ representa un factor de ponderación. Para justificar esta elección, notar que $s\cdot \score{x}{p_\phi(y|x)}| = \score{x}{Z^{-1}p_\phi(y|x)^s}$, para cualquier constante de normalización $Z$, reconociendo el score de la densidad $p(y|x)^s$. De esta forma, cuando $s>1$ la distribución $p(y|x)$ se vuelve más concentrada en sus modas, lo cual es deseable para generar muestras de alta calidad. Sin embargo, al disminuir la densidad en otras regiones del soporte, se sacrifica diversidad en las muestras generadas. Esto crea un trade-off entre calidad y diversidad (ver \autoref{fig:dm/classifier_guidance_scale}) al igual como ocurría en las GANs al usar el \textit{truncation trick}\footnote{Sin embargo, considerar que las GANs son propensas a colapsar a las modas de la distribución, por lo que suelen capturar menos diversidad que los modelos modernos basados en verosimilitud.}.
+
+\insertimage{dm/classifier_guidance_scale}{1}{Trade-off entre calidad y variedad que se observa al cambiar el factor de escala del gradiente. Por un lado, al aumentar el factor aumenta el FID, IS y la precisión (indicadores asociados a la calidad), mientras que disminuye el recall (indicador asociado a la diversidad).}
+
+\paragraph{Classifier-free guidance}
+
+En \cite{ho2022classifierfreediffusionguidance}, se propone una alternativa al classifier guidance que no requiere entrenar un clasificador separado. Este método, denominado classifier-free guidance, se basa en entrenar un único modelo de difusión condicional $p_\theta(x_t|x_{t+1},y)$ que puede funcionar tanto de forma condicional como incondicional.
+
+La idea principal es entrenar el modelo para que pueda manejar un token especial $\emptyset$ que representa la ausencia de condición. Así, $p_\theta(x_t|x_{t+1},\emptyset)$ equivale a un modelo incondicional. Durante el entrenamiento, con cierta probabilidad se reemplaza la condición $y$ por $\emptyset$, permitiendo que el modelo aprenda ambos casos.
+
+\pendiente{escribir. agregar idea de temperatura y decir que la técnica anterior está limitada a datasets etiquetados.}
+\pendiente{comparar con generación condicional al usar SDEs.}
+
+\subsubsection{Difusión en el espacio latente}
+
+Una subfamilia importante dentro del grupo de los modelos de difusión son los \textit{latent diffusion models} (LDM). El trabajo más conocido en esta familia es \textit{Stable Diffusion}, cuya versión inicial se encuentra en \cite{rombach2022highresolution}. Este trabajo es un proyecto colaborativo de código abierto cuyos pesos (modelos entrenados) están disponibles para la comunidad.
+
+La principal característica de este modelo es que trabaja en el espacio latente de las imágenes\footnote{A esta familia de modelos se le suele llamar \textit{latent diffusion models} o LDM}. Para esto, en \cite{rombach2022highresolution} primero entrenan un VAE para luego entrenar un modelo de difusión en el espacio latente de dicho VAE. Con esto, se consigue un entrenamiento más eficiente y se libera la opción de poder escalar el modelo a mayores resoluciones. El diagrama de la arquitectura del modelo \textit{Stable Diffusion} se puede encontrar en la \autoref{fig:dm/ldm_architecture}.
+
+\insertimage{dm/ldm_architecture}{0.8}{Arquitectura del modelo \textit{Stable Diffusion}. El bloque rosado corresponde al VAE mientras que el bloque verde corresponde al modelo de difusión en el espacio latente. Para condicionar la generación, un embedding aprendido $\tau_\theta$ es inyectado a la U-Net mediante un mecanismo de \textit{cross-attention}. Imagen obtenida desde \cite{rombach2022highresolution}.}
+
+Este modelo busca un espacio latente de menor dimensión\footnote{al asumir que este espacio es de dimensión menor que la dimensión de los datos, implícitamente se está aceptando la \textit{manifold assumption}. En \cite{rombach2022highresolution} muestran empíricamente que la mayoría de los bits de una imagen digital corresponden a detalles imperceptibles.} que sea perceptualmente equivalente al espacio de los datos mediante el uso de un VAE.
+
+A diferencia de propuestas anteriores, aquí se entrena este modelo primero, sin considerar un modelo de difusión en particular. Esto permite reutilizar el VAE para entrenar distintos modelos de difusión, permitiendo explorar una mayor cantidad de variantes.
+
+Con el fin de evitar varianzas extremadamente largas en el espacio latente, los autores propusieron dos regularizaciones al VAE, que hoy se conocen como \textit{KL-reg} y \textit{VQ-reg}.
+
+El modelo \textit{Stable Diffusion} permite condicionar información externa $y$. Para esto, el modelo introduce un encoder especializado $\tau_\theta$, para así representar $y$ mediante $\tau_\theta(y)$. Esta nueva representación es transmitida a cada capa de la U-Net mediante un mecanismo de \textit{cross-attention} (ver \cite{vaswani2023attention}), por lo que es necesario usar representaciones secuenciales:
+
+\begin{itemize}
+    \item $\mathcal{U}_i(z_t)\in\matrixspace{N,d_u^i}{\R}$ es una representación aplanada de la capa $i$ de la U-Net que realizará atención sobre la condición $\tau_\theta(y)$. Por lo tanto, en esa capa de atención será la secuencia que actúa como \textit{query}.
+    \item $\tau_\theta(y)\in\matrixspace{M,d_\tau}{\R}$ actuará como el par \textit{key-value}. En el caso de que $y$ sea un texto, $\tau_\theta$ es el encoder de un transformer, $M$ es el largo de la secuencia y $d_\tau$ la dimensión de cada embedding. Es importante mencionar que el modelo $\tau_\theta$ se entrena al mismo tiempo que el modelo de difusión (\textit{Stable Diffusion} usa el enfoque $\epsilon-$prediction).
+\end{itemize}
+
+En la \autoref{fig:dm/stable_diffusion_cond} se ve una ilustración de este mecanismo de atención. Condicionando sobre imágenes, los autores de \cite{rombach2022highresolution} logran realizar síntesis semántica (creando imágenes realistas asociadas a un mapa semántico), super-resolución  e \textit{inpainting}\footnote{En términos generales, \textit{inpainting} consiste en llenar regiones de una imagen siguiendo una máscara. Esto sirve para reparar imágenes corruptas o sustituir partes con contenido no deseado en la imagen.}. En la \autoref{img:ldm_inpainting} se pueden ver ejemplos.
+
+\insertimage{dm/stable_diffusion_cond}{0.7}{Mecanismo de condicionamiento en el modelo \textit{Stable Diffusion}. La matriz $\tau_\theta$ es obtenida a partir de $y$. Un mecanismo de atención cruzada entre las distintas capas de la red y $\tau_\theta$ permite introducir la información de $y$ en la red. Imagen obtenida desde \cite{samarin2022powerdm}.}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.45\textwidth]{images/dm/ldm_semantic_synthesis}
+    \includegraphics[width=0.45\textwidth]{images/dm/ldm_object_removal}
+    \caption{(izquierda) generación condicionada a un mapa semántico. (derecha) eliminación de objetos mediante \textit{inpainting}.}
+    \label{img:ldm_inpainting}
+\end{figure}
+
+\section{Modelos de difusión a tiempo continuo}
+\label{dm/continuous_dm}
+
+En esta sección se revisará una generalización del modelo de difusión propuesto por \cite{ho2020denoising}, donde la cadena de Markov utilizada para los procesos de inyección de ruido y denoising son sustituidos por procesos estocásticos a tiempo continuo. Esta formulación continua de los modelos de difusión será la que permitirá conectarlos con el problema del puente de Schrödinger en el \autoref{eot_sbp}. Además, este nuevo enfoque permitirá trabajar con diferentes procesos de inyección de ruido sobre un mismo marco teórico. Además, en \cite{song2021scorebased} notaron que, al ver el proceso de difusión en el continuo, es posible reducir la cantidad de iteraciones disminuyendo la precisión del \textit{solver} que se utilice para simular la SDE o la \textit{probability flow ODE}.
+
+Antes de introducir esta nueva formulación se revisarán una formulación previa de los modelos de difusión donde se mostrará que la red neuronal entrenada para aprender el proceso reverso también permite aprender la derivada logarítmica de la distribución marginal en un tiempo $t\in[0,T]$, lo que permitirá, además, conectar los modelos de difusión con otra familia de modelos que al comienzo parecían independientes. Esta propiedad permitirá posteriormente aprender un proceso reverso a tiempo continuo gracias a un teorema importante del cálculo estocástico conocido como \textit{teorema de inversión de Anderson}.
+
+\subsection{Modelos generativos basados en score}
+\label{dm/continuous_dm/score}
+
+En esta subsección se revisará otra familia de modelos generativos denominada \textit{score-based models}. Si bien en un inicio este enfoque se propuso de manera independiente a los modelos de difusión, un trabajo posterior mostró que ambos paradigmas pueden ser vistos como un modelo de difusión más general cuya dinámica viene dada por una SDE.
+
+Dada una distribución de probabilidad con densidad $p$, la \textit{función de score}\footnote{A esta función también se le denomina score de Hyvärinen o de Stein, para diferenciarla de la función score usada en la definición de la \textit{información de Fisher}. En esta última, el gradiente es tomado con respecto a los parámetros del modelo, mientras que aquí se está considerando el gradiente con respecto a la entrada.} de dicha distribución es la derivada logarítmica de su densidad:
+
+\begin{equation}
+    \nabla_x \log p(x)
+\end{equation}
+
+Los modelos que buscan aprender la función de score en vez de aprender directamente la densidad $p$ se denominan \textit{modelos basados en score}. Una justificación para aprender directamente el score de una distribución es notar que si $\nabla_x f(x) = \nabla_x g(x)$ entonces, por teorema fundamental del cálculo, $f(x) = g(x)+c$, donde necesariamente $c=0$ cuando $f$ y $g$ son log-densidades de probabilidad, en efecto:
+
+\begin{equation}
+    f(x) = g(x) + c \implies \int \exp(f(x))dx = \int \exp(g(x) + c)dx = e^c\int \exp(g(x))dx \implies e^c=1
+\end{equation}
+
+donde se usó el hecho de que $\exp(f)$ y $\exp(g)$ son densidades de probabilidad. De esta forma, una función de score caracteriza totalmente a su densidad de probabilidad asociada.
+
+Dada una densidad desconocida $\ptrue$ y un modelo paramétrico $s_\theta$ que busque aprender el score de $\ptrue$, la función objetivo natural en este caso es la divergencia de Fisher entre ambas densidades:
+
+\begin{align}
+    \DF{\ptrue}{p_\theta} := & \frac{1}{2}\E{x\sim\ptrue(x)}{\norm{\nabla_x\log \ptrue(x) - \nabla_x\log p_\theta(x)}^2} \\
+    =                        & \frac{1}{2}\E{x\sim\ptrue(x)}{\norm{\nabla_x\log \ptrue(x) - s_\theta(x)}^2}
+\end{align}
+
+donde $p_\theta$ es la densidad asociada al score $s_\theta$. Al igual que antes, la esperanza es aproximada según la distribución empírica asociada a un conjunto de muestras de entrenamiento proveniente de $\ptrue$. Si bien el score $\nabla_x\log \ptrue(x)$ no es conocido, en \cite{hyvarinen2005estimation} prueban que la divergencia de Fisher es equivalente al siguiente objetivo:
+
+\begin{prop}[divergencia de Fisher para SM]
+    Dado un modelo paramétrico $s_\theta$ asociado al score de otro modelo $p_\theta$ que busca aproximar una densidad desconocida $\ptrue$, se tiene que:
+
+    \begin{equation}
+        \DF{\ptrue}{p_\theta} =
+        \E{x\sim\ptrue(x)}{\trace{\nabla_x s_\theta(x)} + \frac{1}{2}\norm{s_\theta(x)}^2} + \cte
+    \end{equation}
+\end{prop}
+
+De esta forma se obtiene una función de pérdida tratable y es posible aprender la función de score de $\ptrue$ dado un conjunto de entrenamiento. Esta método se conoce en la literatura como \textit{score-matching} (SM).
+
+Lo único que queda pendiente es ver cómo generar muestras a partir de $\ptrue$ teniendo únicamente su función de score, lo cual se consigue siguiendo la dinámica de Langevin.
+
+\subsubsection{Dinámica de Langevin}
+
+Para poder generar muestras de una densidad de distribución $p(x)$ a partir de su función de score $\nabla_x\log p(x)$, es usual usar un algoritmo denominado \textit{Langeving sampling} o \textit{Langeving Monte Carlo} (LMC). Este último nombre se debe a que este algoritmo puede ser visto como un caso particular de una variante del método de MCMC, denominada \textit{Hamiltonian Monte Carlo} (HMC). Sin embargo, para el estudio de modelos de difusión es más beneficioso analizarlo mediante su conexión con la dinámica de Langevin. El \autoref{alg:langevin} detalla el procedimiento.
+
+\begin{algorithm}
+    \caption{Langevin sampling}
+    \label{alg:langevin}
+    \begin{algorithmic}[1]
+        \Require Distribución inicial $\pi$, cantidad de iteraciones $T$ y largo de paso $\epsilon$.
+        \State Generar con $x_0\sim \pi(x_0)$.
+        \For{$t$ desde a hasta $T$}
+        \State Generar $z_t\sim \gaussian{0}{\identity{d}}$.
+        \State $x_t\gets x_{t-1} + \frac{\epsilon}{2}\score{x_{t-1}}{p(x_{t-1})} + \sqrt{\epsilon} z_t$
+        \EndFor
+        \State\Return $x_T$
+    \end{algorithmic}
+\end{algorithm}
+
+Este método se puede ver como un método de gradiente ascendente perturbado que dirige $x_t$ hacia los máximos de $p$. Al agregar aleatoriedad mediante $z_t$ se asegura que $x_T$ no colapse hacia alguna de las modas (máximos locales) de $p$. En efecto, cuando $T\to\infty$ y $\epsilon\to 0$, la cadena construida en el \autoref{alg:langevin} converge a su única distribución estacionaria $p$, por lo que $x_T$ corresponde a una muestra exacta de $p$. En la práctica, se considera $T$ suficientemente largo y $\epsilon$ suficientemente pequeño. Con esto, es posible generar muestras desde $\ptrue$ teniendo un modelo paramétrico $s_\theta$ que aproxime su score.
+
+\subsubsection{Score matching mediante la inyección de ruido}
+
+Una de las principales limitaciones del enfoque anterior es el tiempo cuadrático que toma computar el término $\trace{\nabla_x s_\theta(x)}$ ya que se vuelve intratable en altas dimensiones. Para solucionar esto, se han propuesto diferentes variantes de SM como \textit{sliced score matching} (SSM) en \cite{song2019sliced} y \textit{Denoising score matching} (DSM) en \cite{DSM}. Este último enfoque realiza score matching sobre los datos perturbados mediante la inyección de un ruido aditivo $\tilde{x} = x+\epsilon$ y estima el score de $q(\tilde{x})=\int q(\tilde{x}|x)\ptrue(x)dx$ en vez de estimar directamente el score de $\ptrue$. Con esto, muestran que el nuevo objetivo toma la siguiente forma:
+
+\begin{prop}[divergencia de Fisher para DSM]
+    Dado un modelo paramétrico $s_\theta$ asociado al score de otro modelo $p_\theta$ que busca aproximar una densidad desconocida $q=\int q(\cdot|x)\ptrue(x)dx$, se tiene que:
+
+    \begin{align}
+        \DF{q}{p_\theta} & = \frac{1}{2}\E{\tilde{x}\sim q(\tilde{x})}{\norm{\nabla_{\tilde{x}}\log q(\tilde{x}) - s_\theta(\tilde{x})}^2}                             \\
+                         & = \frac{1}{2}\E{x\sim\ptrue(x),\,\tilde{x}\sim q(\tilde{x}|x)}{\norm{\nabla_{\tilde{x}}\log q(\tilde{x}|x) - s_\theta(\tilde{x})}^2} + \cte
+    \end{align}
+\end{prop}
+
+En el caso de considerar un kernel de perturbación gaussiano $q(\tilde{x}|x) \sim \gaussian{x}{\sigma^2 \identity{d}}$, su score es conocido y la función objetivo se simplifica aún más:
+
+\begin{equation}
+    \label{eq:fisher_dsm}
+    \DF{q}{p_\theta} = \frac{1}{2}\E{x\sim\ptrue(x),\,\tilde{x}\sim \gaussian{x}{\sigma^2 \identity{d}}}{\norm{\frac{x-\tilde{x}}{\sigma^2} - s_\theta(\tilde{x})}^2}
+\end{equation}
+
+De esta forma, al usar una perturbación gaussiana se evita la dificultad de computar $\trace{\nabla_x s_\theta(x)}$ y, si bien el modelo está aprendiendo el score de $q(\tilde{x})$, se puede considerar que $q\approx\ptrue$ cuando $\sigma^2$ es suficientemente pequeño.
+
+Esta técnica también soluciona otros problemas observados en el modelo SM original:
+
+\begin{itemize}
+    \item Considerando la \textit{manifold assumption}, el score $\nabla_x \ptrue(x)$ está indefinido en gran parte del dominio de $\ptrue$ ya que el soporte de $\ptrue$ está confinado en una variedad de dimensión estrictamente menor. Al usar una perturbación gaussiana, el soporte vuelve a ser todo $\R^d$.
+    \item Este kernel de perturbación asegura que la densidad condicional $q(\tilde{x}|x)$ sea diferenciable, lo cual no es necesariamente cierto al tratar directamente con $\ptrue$.
+\end{itemize}
+
+Por otra parte, si bien la técnica presentada en \cite{DSM} estabiliza el entrenamiento, un trabajo posterior muestra alguna de sus limitaciones y propone hacer \textit{denoising score matching} utilizando distintos niveles de ruido. En particular, los problemas adicionales que reconocen en \cite{song2020generative} son los siguientes:
+
+\begin{itemize}
+    \item Considerando que las muestras de entrenamiento fueron generadas directamente desde $\ptrue$, es altamente problable no tener muestras de entrenamiento en regiones de baja densidad. Dado que la esperanza de la divergencia de Fisher es aproximada mediante la distribución empírica, la función de score aprendida $s_\theta$ no será correcta en zonas de baja densidad. Esto puede observarse en la \autoref{fig:dm/sgm_low_density}.
+
+          \insertimage{dm/sgm_low_density}{0.6}{Campo vectorial del score real (izquierda) y aprendido (derecha) para una mixtura gaussiana. El mapa de calor está asociado a la densidad de la mixtura y los rectángulos muestran donde la predicción del score es cercana a la real. Se debe observar que la predicción solo es precisa alrededor de las modas.}
+
+    \item Dadas dos distribuciones $p_1$ y $p_2$ de soporte disjunto, al considerar la mixtura $p_{\text{mixture}} = \pi p_1 + (1-\pi) p_2$, su score vendrá dado por:
+
+          \begin{equation}
+              \nabla_x p_{\text{mixture}}(x) = \begin{cases}
+                  \nabla_x (\log \pi + \log p_1(x)) = \nabla_x\log p_1(x),     & x\in\text{supp}(p_1) \\
+                  \nabla_x (\log (1-\pi) + \log p_2(x)) = \nabla_x\log p_2(x), & x\in\text{supp}(p_2)
+              \end{cases}
+          \end{equation}
+
+          Por lo tanto, el score de la mixtura no depende de $\pi$ y la dinámica de Langevin no podrá diferenciar entre los ponderadores de la mixtura. Si bien al agregar ruido gaussiano el soporte pasa a ser todo $\R^d$, el fenómeno se sigue observando cuando se intentan conectar dos regiones separadas por zonas de baja densidad, donde la dinámica de Langevin requerirá más iteraciones para converger. Este problema se observa en la \autoref{fig:dm/sgm_mixture_sampling} (centro).
+
+          \insertimage{dm/sgm_mixture_sampling}{0.9}{(izquierda) muestras de entrenamiento generadas a partir de la mixtura de la \autoref{fig:dm/sgm_low_density}. (centro) muestras generadas mediante DSM con la dinámica de Langevin usual. (derecha) muestras generadas con la dinámica de Langevin propuesta por \cite{song2020generative}.}
+\end{itemize}
+
+Para atacar estos problemas, los autores de \cite{song2020generative} proponen, en primer lugar, seguir el enfoque de DSM pero utilizando distintos niveles de ruido. Consideran que al usar un ruido de alta varianza se soluciona el problema de tener regiones de muy baja densidad y la aproximación del score puede ser más exacta, pero la distribución aprendida se aleja de $\ptrue$. Por lo tanto, proponen utilizar una secuencia creciente\footnote{Originalmente, en \cite{song2020generative} se usa la secuencia en orden decreciente. Aquí se considerará en orden creciente para seguir el mismo orden que el modelo DDPM.} de ruidos $(\sigma_k)_{k=1}^L\subset\R_{++}$, cada uno asociado a un kernel de perturbación $q_{\sigma_k}$ definido como un ruido aditivo $x\mapsto x+z,\,z\sim\gaussian{0}{\sigma_k^2 \identity{d}}$. Los autores proponen usar una secuencia geométrica tal que $\sigma_1$ sea lo suficientemente pequeño para que $q_{\sigma_1}\approx\ptrue$, y $\sigma_L$ sea lo suficientemente grande para que $q_{\sigma_L}\approx\gaussian{0}{\sigma_L\identity{d}}$ y que además se logre mitigar el problema de las zonas de baja densidad.
+
+Para cada $\sigma\in(\sigma_k)_{k=1}^L$ se debe entrenar un modelo $s_\theta(x,\sigma)$ que aproxime a $\nabla_x \log q_\sigma(x)$. Con esto, se tendrá una función de score-matching (ver \eqref{eq:fisher_dsm}) para cada nivel de ruido. La función objetivo final será un promedio ponderado de las pérdidas individuales\footnote{Se puede justificar el mejor desempeño de este modelo sobre el original considerando el promedio como un \textit{ensemble} (ver \textit{bagging} en \cite{bishop2006pattern}).}:
+
+\begin{align}
+    \label{eq:dsm_loss}
+    l_\sigma(\theta) : & = \frac{1}{2}\E{x\sim\ptrue,\,\tilde{x}\sim \gaussian{x}{\sigma^2 \identity{d}}}{\norm{\frac{x-\tilde{x}}{\sigma^2} - s_\theta(\tilde{x}, \sigma)}^2},\quad \forall\sigma\in (\sigma_k)_{k=1}^L \\
+    L(\theta)          & = \frac{1}{L} \sum_{k=1}^L \lambda(\sigma_k) l_{\sigma_k}(\theta)
+\end{align}
+
+Si bien se podrían utilizar modelos de score $s_\theta$ independientes para cada nivel de ruido $\sigma$, al considerar $\lambda(\sigma_k)>0$ se tiene que $L$ viene dada por una combinación cónica de las pérdidas individuales $l_\sigma$ por lo que, si el modelo paramétrico $s_\theta$ tiene suficiente capacidad, el mínimo de $L$ es alcanzado si y solo cada uno de los sumandos es minimizado independientemente.
+
+Para la elección del ponderador $\lambda(\sigma)$, los autores notaron empíricamente que, en el óptimo, $\norm{s_\theta(\cdot, \sigma)}\propto \sigma^{-1}$, por lo que tomando $\lambda(\sigma) = \sigma^2$, el término $\lambda(\sigma_k) l_{\sigma_k}(\theta)$ se vuelve independiente de $\sigma$ y así, ningún sumando de $L$ gana o pierde relevancia únicamente por el nivel de ruido $\sigma$.
+
+En segundo lugar, para la generación de muestras los autores de \cite{song2020generative} proponen una modificación al algoritmo de Langevin, donde ahora se computará una cadena $(x_t)_{t=1}^T$ para cada uno de los niveles de ruido (de forma descendente en el ruido), donde el estado inicial de la cadena para el ruido $\sigma_k$ vendrá dado por el estado final de la cadena para el rudio $\sigma_{k+1}$. El \autoref{alg:annealed_langevin} detalla el procedimiento.
+
+\begin{algorithm}
+    \caption{Annealed Langevin sampling}
+    \label{alg:annealed_langevin}
+    \begin{algorithmic}[1]
+        \Require Niveles de ruido $(\sigma_k)_{k=1}^L$ usandos durante el entrenamiento.
+        \Require Distribución inicial $\pi$, cantidad de iteraciones $T$ por nivel de ruido y largo de paso $\epsilon$.
+        \Require Modelo $s_\theta(\cdot,\cdot)$ ya entrenado.
+        \State Generar $x_0\sim \pi(x_0)$.
+        \For{$k$ desde 1 hasta $L$}
+        \State $\epsilon_k \gets \epsilon \frac{\sigma_k^2}{\sigma_L^2}$  \Comment{Largo de paso adaptado para el nivel de ruido.}
+        \For{$t$ desde 1 hasta $T$}
+        \State Generar $z_t\sim \gaussian{0}{\identity{d}}$.
+        \State $x_t\gets x_{t-1} + \frac{\epsilon_k}{2}s_\theta(x_{t-1},\sigma_k) + \sqrt{\epsilon_i} z_t$
+        \EndFor
+        \State $x_0\gets x_T$
+        \EndFor
+        \State\Return $x_T$
+    \end{algorithmic}
+\end{algorithm}
+
+Si bien esta variante de DSM recibe distintos nombres en la literatura, aquí se le seguirá denominando simplemente DSM ya que se ha vuelto la variante predominante en esta familia de modelos.
+
+\subsubsection{DDPM como modelo basado en score}
+
+En la sección de DDPM se mostró que lo único que se necesita para invertir el proceso de inyección de ruido mediante transiciones $p_\theta(x_{t-1}|x_t)\sim\gaussian{\mu_\theta(x_t,t)}{\sigma_q^2(t)\identity{d}}$ es aprender una función de media $\mu_\theta(x_t,t)$ que aproxime a $\mu_q(x_0,x_t,t)$. Para esto, se estudiaron distintas formulaciones equivalentes:
+
+\begin{itemize}
+    \item Aprender $\mu_q(x_0,x_t,t)$ directamente mediante un modelo $\mu_\theta(x_t,t)$.
+    \item Aprender la muestra $x_0$ que generó $x_t$ en la etapa $t$ mediante otro modelo $x_\theta(x_t,t)$.
+    \item Aprender el ruido $\epsilon$ inyectado a $x_0$ en la etapa $t$ mediante otro modelo $\epsilon_\theta(x_t,t)$.
+\end{itemize}
+
+En esta subsección se verá que DDPM también puede ser visto como un modelo basado en score. Para esto, se deducirá una cuarta forma de formular el problema de optimización, donde ahora un modelo paramétrico $s_\theta(x_t,t)$ tendrá que aprender el score $\nabla_x\log p(x_t)$ para obtener la función predictora de la media $\mu_\theta(x_t,t)$. Para introducir la función de score en el modelo se utilizará el siguiente resultado:
+
+\begin{teo}[fórmula de Tweedie, caso gaussiano]
+    Sea un modelo de variable latente $\mu\mapsto z$ con $\mu\sim p(\mu)$ la variable aleatoria latente (desconocida) y $z|\mu\sim p(z|\mu)=\gaussian{\mu}{\Sigma}$ la variable aleatoria observada. Dada una muestra $z\sim p(z)= \int p(z|\mu) p(\mu)$, la mejor estimación del parámetro $\mu$ asociado a $z$ es:
+
+    \begin{equation}
+        \label{eq:tweedie}
+        \E{p(\mu|z)}{\mu|z} = z + \Sigma \cdot \underbrace{\nabla_z \log p(z)}_{\text{corrección de Bayes}}
+    \end{equation}
+\end{teo}
+
+\begin{proof}
+    Usando que $\int z\,p(\mu|z) = z\int p(\mu|z)=z$ y por teorema de Bayes:
+
+    \begin{equation}
+        \E{p(\mu|z)}{\mu|z} = \int \mu\, p(\mu|z)d\mu = z - \int (z-\mu)p(\mu|z) d\mu = z - \int (z-\mu)\frac{p(z|\mu)p(\mu)}{p(z)} d\mu
+    \end{equation}
+
+    Notando que $\score{z}{p(z|\mu)} = -\Sigma (x-\mu)$, el integrando se escribe como:
+
+    \begin{equation}
+        (z-\mu)\frac{p(z|\mu)p(\mu)}{p(z)} = -\Sigma \score{z}{p(z|\mu)} \frac{p(z|\mu)p(\mu)}{p(z)} = -\Sigma \frac{\nabla_z p(z|\mu)}{p(z|\mu)} \frac{p(z|\mu)p(\mu)}{p(z)} = -\Sigma \frac{\nabla_z p(z,\mu)}{p(z)}
+    \end{equation}
+
+    Por lo tanto, por regla de de integración de Leibniz:
+
+    \begin{equation}
+        \E{p(\mu|z)}{\mu|z} = z + \Sigma \frac{\int \nabla_z p(z,\mu)d\mu}{p(z)} = z + \Sigma \frac{\nabla_z \int p(z,\mu)d\mu}{p(z)} = z + \Sigma \frac{\nabla_z p(z)}{p(z)}
+    \end{equation}
+
+    Donde el cociente es precisamente el score de $p(z)$.
+\end{proof}
+
+Este resultado busca corregir la estimación empírica de la media real $\mu$\footnote{Recordar que el estimador de máxima verosimilitud de la media es la media empírica, que en este caso es $z$.} mediante un desplazamiento según el score de $z$. Esta corrección es importante en casos donde la muestra $z$ puede ser un outlier, en cuyo caso el score $\score{z}{p(z)}$ buscará desplazar la estimación hacia el centro.
+
+Utilizando este resultado es posible mejorar la predicción de $\mu_q(x_0,x_t,t)$ realizada con el enfoque $\epsilon$-prediction en la \autoref{prop:epsilon_prediction}. En efecto, para dicha propiedad se usó que $q(x_t|x_0)\sim\gaussian{\sqrt{\overline{\alpha}_t}x_0}{(1-\overline{\alpha}_t)\identity{d}}$ para realizar la sustitución
+
+\begin{equation}
+    \label{eq:x0_epsilon_prediction}
+    x_0 = \frac{x_t - \sqrt{1-\overline{\alpha}_t}\epsilon(x_t)}{\sqrt{\overline{\alpha}_t}}
+\end{equation}
+
+en $\mu_q(x_0,x_t,t)$. Ahora, mediante la fórmula de Tweedie, se puede obtener una mejor estimación para $x_0$ mediante una mejor estimación de la media $\sqrt{\overline{\alpha}_t}x_0$:
+
+\begin{equation}
+    \label{eq:x0_tweedie}
+    \sqrt{\overline{\alpha}_t}x_0 = x_t+(1-\overline{\alpha}_t)\nabla_{x_t}\log q(x_t|x_0) \implies x_0 = \frac{x_t+(1-\overline{\alpha}_t)\nabla_{x_t}\log q(x_t|x_0)}{\sqrt{\overline{\alpha}_t}}
+\end{equation}
+
+Sustituyendo esta nueva estimación de $x_0$ en $\mu_q(x_0,x_t,t)$ de forma análoga a lo hecho en la \autoref{prop:epsilon_prediction}, se obtiene el siguiente resultado:
+
+\begin{prop}[problema de optimización DDPM (score-prediction)]
+    \label{prop:score_prediction}
+    Para los modelos propuestos en \eqref{eq:ddpm_forward} y \eqref{eq:backward_transition}, la función predictora de la media $\mu_\theta(x_t,t)$ óptima es combinación lineal entre $x_t$ y $s_\theta$ (ver similitud con \eqref{eq:ddpm_epsilon_prediction}):
+
+    \begin{equation}
+        \mu_\theta(x_t,t) = \frac{1}{\sqrt{\alpha_t}}x_t - \frac{1-\alpha_t}{\sqrt{\alpha_t}}s_\theta(x_t,t)
+    \end{equation}
+
+    donde el modelo $s_\theta(x_t,t)$ resuelve el siguiente problema de optimización:
+
+    \begin{equation}
+        s_\theta^*=\argmin_{\epsilon_\theta} \sum_{t=2}^T \frac{(1-\alpha_t)^2}{2\sigma_q^2(t)\alpha_t} \E{x_0\sim\ptrue, x_t\sim q(x_t|x_0)}{\norm{\nabla_{x_t}\log q(x_t|x_0) - s_\theta(x_t,t)}^2}
+    \end{equation}
+\end{prop}
+
+Esta formulación permite afirmar que el modelo DDPM también puede ser visto como un modelo basado en score.
+
+Por último, a partir de las ecuaciones \eqref{eq:x0_epsilon_prediction} y \eqref{eq:x0_tweedie} se puede observar que el score $\nabla_{x_t}\log q(x_t|x_0)$ y el ruido inyectado $\epsilon(x_t)$ están en proporción directa:
+
+\begin{equation}
+    \frac{\epsilon(x_t)}{\nabla_{x_t}\log q(x_t|x_0)} = -\sqrt{1-\bar\alpha_t}
+\end{equation}
+
+\subsection{Introducción práctica a las ecuaciones diferenciales estocásticas}
+\label{dm/continuous_dm/sdes_introduction}
+
+\pendiente{Cuando la SDE tiene drift $f(\cdot,t)$ afín, el kernel de transición $p(x_t|x_0)$ siempre es gaussiano. Verificar esto.}
+
+Antes de entregar una formulación a tiempo continuo de los procesos de difusión, es necesario revisar algunos conceptos básicos sobre cálculo estocástico. En esta sección se dará una introducción informal a las ecuaciones diferenciales estocásticas, mostrando por qué es necesario construir una nueva teoría para su desarrollo. Para comenzar, se entrega la siguiente jerarquía para los procesos estocásticos, la cual será importante para tener en cuenta las propiedades de los procesos que se están utilizando tanto en los modelos de difusión como en la formulación continua del transporte óptimo y el problema de Schrödinger en los \autoref{ot} y \autoref{eot_sbp} respectivamente:
+
+\pendiente{verificar que todo esto es cierto.}
+
+\begin{itemize}
+    \item Un proceso estocástico es cualquier proceso aleatorio indexado por el tiempo. Entre estos, están los proceso de Markov, los cuales son procesos cuyo futuro solo depende del presente y pueden ser procesos a tiempo discreto o continuo. Debido a esto último, no todos los procesos de Markov tienen necesariamente una densidad marginal (con respecto a la medida de Lebesgue).
+    \item Dentro de los procesos de Markov están los procesos de Îto, los cuales son los procesos de Markov a tiempo continuo que se pueden representar mediante una ecuación diferencial estocástica (SDE). Además, estos procesos pueden tener trayectorias continuas o con saltos. Por otra parte, no todos los procesos de Markov a tiempo continuo se pueden representar mediante una SDE (por ejemplo, un proceso de Poisson es un proceso de Markov pero no un proceso de Îto).
+    \item Un subconjunto particular de los procesos de Îto son los procesos de difusión, los cuales son procesos de Îto guiados por un movimiento browiano (i.e. poseen una SDE de la forma $\mu(x_t,t)dt+\sigma(x_t,t)dW$, ver \autoref{defn:brownian_motion}). En particular, estos procesos tienen trayectorias continuas. Un proceso de Îto que no es un proceso de difusión es, por ejemplo, un proceso de Lévy, los cuales tienen SDEs de la forma $dx_t = (\mu dt + \sigma dW_t) + dJ_t$ donde el primer sumando es la parte difusiva y el segundo sumando es el que genera las discontinuidades en las trayectorias. En este trabajo, dado que se consideran únicamente trayectorias continuas, se utilizarám equivalentemente los términos \textit{proceso de Îto} y \textit{proceso de difusión}.
+\end{itemize}
+
+Las ecuaciones diferenciales estocásticas (SDEs) son una herramienta poderosa para modelar sistemas dinámicos influenciados por componentes aleatorias. Estos modelos son esenciales en diversas áreas como física, biología, economía e ingeniería, donde los sistemas no pueden ser descritos adecuadamente solo por ecuaciones diferenciales ordinarias (ODEs) debido a la presencia de ruido o incertidumbre.
+
+Para empezar, consideremos un sistema físico definido en $\R^d$ durante un intervalo de tiempo $[t_0,T]$ que evoluciona de acuerdo a la siguiente dinámica:
+
+\begin{equation}
+    \frac{dx(t)}{dt} = \mu(x(t),t) + \sigma(x(t),t)w(t)
+    \label{eq:sde_as_derivative}
+\end{equation}
+
+Donde $\mu:\R^d\times [t_0,T]\to\R^d$ es un forzante o estímulo determinista y $\sigma:\R^d\times [t_0,T]\to\matrixspace{d,d}{\R}$ es un factor matricial del forzante $\sigma w$, el cual depende de una cantidad aleatoria $w$. De este modo, el sistema $x$ tiene una componente evolutiva fija y otra estocástica, la cual puede representar incertidumbre sobre el forzante total o estímulos externos que no están considerados en el forzante $\mu$.
+
+En el campo de las SDEs, la función $\mu$ es denominada \textit{drift}, mientras que la función $\sigma$ se conoce como \textit{dispersión} o \textit{volatilidad}. El factor estocástico $w$ es un término que representa la incertidumbre y es comúnmente considerado como ruido blanco. Para hacer más preciso este último término, se definirá de la siguiente forma:
+
+\begin{defn}[ruido blanco]
+    El ruido blanco es un proceso estocástico\footnote{Un proceso estocástico $x$ es una familia de variables aleatorias $(x_t)_{t\in T}$ donde $T\subset{\R}$ representa un intervalo temporal no necesariamente acotado. Cada realización del proceso $x$ se suele representar como $x(t)$ o $x_t$.} $w$ con las siguientes propiedades:
+
+    \begin{itemize}
+        \item Para dos tiempos distintos $t_1, t_2\in\R_+$, las v.a. $w_{t_1}$ y $w_{t_2}$ son independientes.
+        \item El mapeo $t\mapsto w(t)$ es un proceso gaussiano con media nula y correlación $\E{}{w(t_1)w(t_2)^\top}=\delta(t_1-t_2)Q$, donde $Q$ se conoce como la densidad espectral del proceso.
+    \end{itemize}
+\end{defn}
+
+De la definición se obtiene que las trayectorias $t\mapsto w(t)$ son discontinuas casi seguramente (c.s.) y que el ruido blanco es no acotado. Estas propiedades no permiten que la ecuación diferencial definida en \eqref{eq:sde_as_derivative} cumpla los requisitos del teorema clásico de existencia y unicidad para ODEs:
+
+\begin{teo}[Cauchy-Picard-Lindelöf]
+    Sea $I\subset\R$ un compacto\footnote{En este caso, es equivalente a que $I$ sea cerrado y acotado.} y $f\in\mathcal{C}^0(I\times\R^d)$ una función Lipschitz con respecto a la segunda variable. Entonces, para cada $t_0\in I$ y cada $x_0\in\R^d$ existe una única solución $x\in\mathcal{C}^1(I)^d$ del problema de Cauchy
+
+    \begin{equation}
+        \begin{cases}
+            x'(t) = f(t,x(t)), & \forall t\in I \\
+            x(t_0) = x_0
+        \end{cases}
+    \end{equation}
+
+\end{teo}
+
+Dada la discontinuidad c.s. del ruido blanco, no se cumple la continuidad del lado derecho requerida en el teorema. Sin embargo, es posible realizar iteraciones de Picard análogas al teorema anterior para obtener la existencia y unicidad en el caso estocástico.
+
+Como se verá en la siguiente subsección, las propiedades antes mencionadas tampoco permitirán utilizar las integrales clásicas para este tipo de ecuaciones.
+
+\subsubsection{Integral de Itô}
+La integral de Itô es un concepto fundamental en el cálculo estocástico, particularmente en el estudio de ecuaciones diferenciales estocásticas (SDEs). A diferencia de las integrales de Riemann o de Lebesgue, la integral de Itô está diseñada para integrar con respecto a procesos estocásticos, especialmente con respecto al movimiento browniano, el cual se define como sigue:
+
+\begin{defn}[proceso de Wiener o movimiento browniano estándar]
+    \label{defn:brownian_motion}
+    El movimiento browniano es un proceso estocástico $W$ en $\R^d$ definido para tiempos $t\geq 0$. Está caracterizado \footnote{Existen otras caracterizaciones equivalentes. Por ejemplo, se puede definir como el límite escalado de un paseo aleatorio (teorema de Donkster) o como una martingala continua con variación cuadrática (catecterización de Lévy).} por 4 propiedades:
+    \begin{itemize}
+        \item Inicio determinista: $W_0 = 0$ casi seguramente.
+        \item Incrementos independientes: para tiempos $t_1\leq t_2<t_3\leq t_4$, los incrementos $W_{t_2} - W_{t_1}$ y $W_{t_4} - W_{t_3}$ son independientes.
+        \item Incrementos gaussianos: para tiempos $t_1<t_2$, $W_{t_2} - W_{t_1}\sim\gaussian{0}{(t_2 - t_1)I_d}$.
+        \item Trayectorias continuas: el mapa $t\mapsto W_t$ es continuo casi seguramente.
+    \end{itemize}
+\end{defn}
+
+De esta definición, se observa que un movimiento browniano es un proceso gaussiano con función de media idénticamente nula y función de covarianza $\mathcal{K}(t_1, t_2) = \min(t_1, t_2)\identity{d}$.
+
+A modo de completitud, se enumeran algunas propiedades clásicas del movimiento browniano:
+
+\begin{teo}[propiedades del movimiento browniano en $\R$]
+    El proceso browniano definido en $\R$ cumple las siguientes propiedades:
+    \begin{itemize}
+        \item Momentos: $\E{}{W_t}=0$ y $\var{W_t} = t$.
+        \item Covarianza: para $t_1<t_2$ se tiene que $\cov{W_{t_1}}{W_{t_2}}=t_1$.
+        \item Autosimilitud.
+        \item No diferenciabilidad: el movimiento browniano es no diferenciable casi en todas partes.
+    \end{itemize}
+\end{teo}
+
+Para resolver la ecuación diferencial definida en \eqref{eq:sde_as_derivative}, se podría tratar de integrar, al menos formalmente, dicha expresión en un intervalo $[t_0, T]$:
+
+\begin{equation}
+    x_T - x_{t_0} = \int_{t_0}^T \mu(x_t,t)dt + \int_{t_0}^T \sigma(x_t,t)w_t dt
+    \label{eq:sde_formal_integration}
+\end{equation}
+
+La primera integral es una integral clásica y puede ser resuelta en el sentido de Riemann o en el sentido de Lebesgue (basta que las funciones de media y covariana del proceso $\mu_t=\mu(x_t,t)$ sean continuas). Por otra parte, la segunda no permite ninguna de las dos interpretaciones anteriores, en efecto:
+
+\paragraph{Como integral de Riemann-Darboux}
+Para una partición $\mathcal{P}=(t_k)_{k=0}^n$ del intervalo $[t_0, T]$, se pueden estudiar las sumas de Riemann asociadas al integrando $\sigma(x_t,t)w_t$, las cuales son de la forma
+
+\begin{equation}
+    \sum_{k=1}^n \sigma\left(x(\tilde{t_k}),\tilde{t_k}\right)w\left(\tilde{t_k}\right) (t_k - t_{k-1})
+\end{equation}
+
+donde $\tilde{t_k}\ = \sup\limits_{t\in [t_{k-1}, t_k]} \sigma(x_t,t)w_t$ en el caso de la suma superior y $\tilde{t_k}\ = \inf\limits_{t\in [t_{k-1}, t_k]} \sigma(x_t,t)w_t$ en el caso de la suma inferior. Dado que el ruido blanco es no acotado en cualquier intervalo, los tiempos $\tilde{t_k}$ no están definidos para ninguna partición $\mathcal{P}$ independientemente de que $\norm{\mathcal{P}} := \max_{0<k\leq n} t_k - t_{k-1}$ tienda a cero. De esta forma, no es posible definir la segunda integral en \eqref{eq:sde_formal_integration} en el sentido de Riemann.
+
+\paragraph{Como integral de Lebesgue}
+El incremento $w_t dt$ en \eqref{eq:sde_formal_integration} corresponde precisamente al incremento de un movimiento browniano $W$. Tratando a este proceso como una medida de Lebesgue-Stieltjes\footnote{Formalmente esto no tiene sentido ya que las medidas son funciones deterministas.} del tipo $\mu_W((t_{k-1}, t_k]) = W_{t_k} - W_{t_{k-1}}$, la segunda integral en \eqref{eq:sde_formal_integration} vista en el sentido de Lebesgue toma la forma
+
+\begin{equation}
+    \int_{t_0}^T \sigma(x_t,t)w_t dt = \int_{t_0}^T \sigma(x_t,t) dW_t = \lim_{\norm{\mathcal{P}}\to 0} \sum_{k=1}^n \sigma\left(x(\tilde{t_k}),\tilde{t_k}\right) \left(W_{t_k} - W_{t_{k-1}}\right)
+    \label{eq:lebesgue_sde}
+\end{equation}
+
+Interpretar esta integral en el sentido de Lebesgue tampoco es posible ya que dicho límite no es único (el movimiento browniano no es de variación acotada). Por lo tanto, no es posible definir la integral estocástica en \eqref{eq:sde_formal_integration} de esta forma (tampoco se podría hacer como una integral de Riemann-Stieltjes). Sin embargo, de aquí se rescata que $w_t dt = dW_t$, lo cual muchas veces es interpretado diciendo que el ruido blanco es la derivada del movimiento browniano. Sin embargo, esto es únicamente a modo de interpretación ya que el movimiento browniano no es diferenciable casi en todas partes.
+
+Para poder darle sentido a la segunda integral en \eqref{eq:sde_formal_integration} es necesario poder definir una integral que permita diferenciales estocásticos. Para esto,
+es posible fijar la elección $\tilde{t_k} = t_k$ (i.e., tomar el lado izquierdo del intervalo) para lograr que el límite en \eqref{eq:lebesgue_sde} sí sea único (en media cuadrática). La construcción de esta nueva integral pasa a llamarse \textit{integral de Itô}\footnote{También es posible definir la integral de Stratonovich considerando a $\tilde{t_k}$ como el punto medio del intervalo $[t_{k-1}, t_k]$, la cual permite que las reglas del cálculo clásico sigan siendo válidas. Sin embargo, esta integral dificulta el análisis teórico ya que no cumple algunas propiedades esenciales que sí tiene la integral de Itô.} y toma la forma
+
+\begin{equation}
+    \int_{t_0}^T \sigma(x_t,t) dW_t = \lim_{\norm{\mathcal{P}}\to 0} \sum_{k=1}^n \sigma\left(x(t_k),t_k\right) \left(W_{t_k} - W_{t_{k-1}}\right)
+\end{equation}
+
+Bajo esta nueva integral, la ecuación diferencial inicial \eqref{eq:sde_as_derivative} (SDE) se denotará como
+
+\begin{equation}
+    dx_t = \mu(x_t,t)dt + \sigma(x_t,t)dW_t
+    \label{eq:sde}
+\end{equation}
+
+Y pasará a llamarse \textit{ecuación diferencial estocástica}, cuya solución corresponde a un proceso estocástico dado por
+
+\begin{equation}
+    x_t = x_{t_0} + \int_{t_0}^t \mu(x_s,s)ds + \int_{t_0}^t \sigma(x_s,s) dW_s
+\end{equation}
+
+Notar que la solución de una SDE corresponde a un proceso aleatorio, por lo que para obtener una trayectoria específica es necesario poder generar muestras a partir de su distribución. En la figura \ref{fig:dm/ornstein_uhlenbeck} se observan algunas trayectorias generadas a partir de la solución de una SDE específica.
+
+Por otra parte, los procesos estocásticos $x=(x_t)_{t\in[t_0,T]}$ que se escriben de esta forma se denominan procesos de Itô:
+
+\begin{defn}[proceso de Itô]
+    Un proceso de Itô es un proceso estocástico que puede ser expresado como una combinación lineal de una función determinista en el tiempo y una integral de Itô con respecto a un movimiento browniano.
+\end{defn}
+
+En consecuencia, un proceso de Itô viene caracterizado por su SDE correspondiente, por lo que de aquí en adelante, cuando se hable de una SDE genérica se estará asumiendo que tiene la forma dada en \eqref{eq:sde}.
+
+Una herramienta fundamental para trabajar con SDEs es el lema o fórmula de Itô, el cual proporciona una manera de diferenciar funciones de procesos estocásticos. Esta fórmula es el análogo estocástico a la regla de la cadena en el cálculo clásico, y es crucial para manipular ecuaciones diferenciales estocásticas. Además, este resultado permite demostrar todos los resultados sobre SDEs utilizados a lo largo de este trabajo.
+
+\begin{teo}[lema de Itô, caso escalar]
+    \label{teo:itos_formula}
+    Dado un proceso de Itô unidimensional ($d=1$) solución de la SDE $dx_t = \mu(x_t,t)dt + \sigma(x_t,t)dW_t$ en $[t_0,T]$ y una función $\phi:\R\times [t_0,T]$ dos veces diferenciables, el proceso dado por $\phi_t = \phi(x_t,t)$ también es un proceso de Itô asociado a la SDE
+
+    \begin{equation}
+        \label{eq:itos_formula}
+        d\phi_t = \left( \frac{\partial\phi}{\partial t} + \mu_t \frac{\partial\phi}{\partial x} + \frac{1}{2} \sigma^2_t \frac{\partial^2\phi}{\partial x^2} \right) dt + \sigma_t \frac{\partial\phi}{\partial x} dW_t.
+    \end{equation}
+
+    donde $\mu_t = \mu(x_t,t),\,\sigma_t = \sigma(x_t,t)$ y las derivadas son evaluadas en $(x_t,t)$.
+
+\end{teo}
+
+La presencia del término con la segunda derivada, que no tiene un análogo directo en el cálculo clásico, es un reflejo de la naturaleza estocástica del proceso $X_t$. Por otra parte, este lema se puede extender a procesos de Itô en $\R^d$ pero se omite su formulación por simplicidad.
+
+\subsubsection{Resultados necesarios}
+
+En este apartado se entregarán sin demostración algunos resultados necesarios para el desarrollo de la teoría de los modelos de difusión a tiempo continuo. Además, estos resultados serán  utilizados en la formulación dinámica del transporte óptimo en la \autoref{ot/dynamic}, y en la formulación dinámica del problema del puente de Schrödinger en la \autoref{eot_sbp/dynamic}.
+
+\paragraph{Ecuación de Fokker-Planck}
+\label{subsec:fokker_planck}
+La ecuación de Fokker-Planck, también conocida como ecuación forward de Kolmogorov, es una ecuación en derivadas parciales (PDE)  que describe la evolución temporal de la función de densidad de un proceso estocástico asociado a una SDE de la forma \eqref{eq:sde}.
+
+\begin{teo}[ecuación de Fokker-Planck, caso escalar]
+    \label{teo:fokker_planck}
+    Dada una SDE escalar ($d=1$) de la forma
+
+    \begin{equation}
+        dx_t = \mu(x_t,t)dt + \sigma(x_t,t)dW_t
+    \end{equation}
+
+    la evolución de la función de densidad de probabilidad de $x_t$, $p(x,t) := p(x_t)$, viene dada por la solución de la PDE
+
+    \begin{equation}
+        \label{eq:fokker_planck}
+        \frac{\partial p(x,t)}{\partial t} = -\frac{\partial}{\partial x} (\mu(x, t) p(x, t)) + \frac{1}{2} \frac{\partial^2}{\partial x^2} [\sigma^2(x, t) p(x, t)].
+    \end{equation}
+
+\end{teo}
+
+Al igual que para la fórmula de Itô en \eqref{teo:itos_formula}, este resultado puede ser extendido para procesos de Itô en $\R^d$ ya que se puede demostrar directamente a partir de la fórmula de Itô. Por otra parte, es importante destacar que si el término de difusión $\sigma(x_t,t)$ es nulo, la ecuación de Fokker-Planck se reduce a la ecuación de transporte \eqref{eq:transport_eq} utilizada en la formulación dinámica del transporte óptimo (ver formulación de Benamou-Brenier en la \autoref{ot/dynamic/benamou_brenier}). Posteriormente, en el \autoref{eot_sbp}, la ecuación de Fokker-Planck será crucial para definir el sistema de Schrödinger, el cual caracterizará la solución al problema del puente de Schrödinger dinámico entre dos medidas de probabilidad.
+
+A modo de ejemplo, se aplicará el \autoref{teo:fokker_planck} sobre la SDE $dx_{t}= dW_t$, la cual es la SDE asociada el movimiento browiano estándar. En este caso, la ecuación de Fokker-Planck se reduce a
+
+\begin{equation}
+    \frac{\partial p(x,t)}{\partial t} = \frac{1}{2} \frac{\partial^{2}p(x, t)}{\partial x^2}.
+\end{equation}
+
+La cual es una ecuación de difusión (en su forma más simple), la cual es una ecuación muy conocida y estudiada. En consecuencia, si se tiene una condición inicial $p(x,0)=\delta(x)$ (i.e., la el proceso estocástico $(x_t)_{t>0}$ comienza de forma determinista en el punto $0\in\R$), la solución de esta PDE es:
+
+\begin{equation}
+    p(x,t) = \frac{1}{\sqrt{2\pi t}} \exp\left(-\frac{x^2}{2t}\right)
+\end{equation}
+
+Por lo que la densidad marginal $p(x_t)$ del movimiento browniano $dx_{t}= dW_t$ (comenzando desde 0) es precisamente la densidad de una variable aleatoria gaussiana $\gaussian{0}{t}$, lo cual es lo esperado de acuerdo a la \autoref{defn:brownian_motion}.
+
+\paragraph{Teorema de inversión}
+
+En algunos casos, como en modelos de difusión basados en SDEs, es necesario poder invertir temporalmente un proceso estocástico. El siguiente resultado indica que, bajo condiciones razonables, esto es posible y más aún, entrega la forma que tendrá la SDE asociada al proceso inverso.
+
+\begin{teo}[inversión de Anderson]
+    \label{teo:anderson}
+    Dado un proceso estocástico $(x_t)_{t\in[0,T]}$ asociado a la SDE $dx_t=\mu(x_t,t)dt+\sigma(x_t,t)dW_t$ tal que $\mu$ y $\sigma$ son lo suficientemente regulares como para que la densidad marginal $p_t(x_t)$ sea la única solución suave de la ecuación de Fokker-Planck asociada. Entonces, existe un único proceso reverso $(Y_t)_{t\in[0,T]}=(X_{T-t})_{t\in[0,T]}$ cuya SDE viene dada por:
+
+    \begin{equation}
+        dy_t = \left[f(y_t,t) - \nabla_{y_t}\cdot\parent{\sigma(x_t,t)\sigma(x_t,t)^\top} - \sigma(x_t,t)\sigma(x_t,t)^\top \score{y_t}{p_{T-t}(y_t)}\right]dt + \sigma(y_t,t)d\overline{w}_t
+        \label{eq:reverse_sde}
+    \end{equation}
+
+    donde $\overline{w}$ es un movimiento browniano fluyendo hacia atrás en el tiempo.
+\end{teo}
+
+La demostración de este teorema puede ser encontrada en \cite{anderson1982reverse}. Por otra parte, 
+
+% \paragraph{Dualidad de Nelson}
+
+% Todo proceso de Itô $x$ está asociado a una SDE de la forma $dx_t = \mu_t^+ dt + \sigma^+_t\beta^+_t$. Del mismo modo, se puede asociar el proceso a una SDE avanzando hacia atrás en el tiempo $dx_t = b_t^+ dt + \sigma^+_t\beta^+_t$. Es conocida la siguiente relación entre los drifts de ambas SDEs:
+
+% \begin{teo}[dualidad de Nelson]
+%     Para un proceso $Q$ de difusividad $\gamma$ asociado a las SDEs
+
+%     \begin{equation}
+%         \begin{cases}
+%             dx_t = b^+_t + \sqrt{\gamma}\beta^+_t & \text{proceso directo (forward)}  \\
+%             dx_t = b^-_t + \sqrt{\gamma}\beta^-_t & \text{proceso inverso (backward)}
+%         \end{cases}
+%         \label{eq:forward_backward_sdes}
+%     \end{equation}
+
+%     Se tiene que
+
+%     \begin{equation}
+%         b^+_t - b^-_t = \gamma\nabla_x\log p(x_t,t)
+%     \end{equation}
+
+%     donde $p(x_t,t)$ es la solución de la ecuación de Fokker-Planck asociada a la SDE forward.
+% \end{teo}
+
+\subsubsection{Procesos de Ornstein–Uhlenbeck}
+
+Los procesos de Ornstein–Uhlenbeck son procesos estocásticos cruciales en diversas áreas de la ciencia y la economía. Estos procesos son fundamentales para modelar fenómenos que tienden a regresar a un valor medio o de equilibrio a lo largo del tiempo. Si bien forman una familia simple de proceso de estocástico, se les dedica una subsección aparte ya que son ampliamente utilizados en modelos generativos basados en difusión.
+
+Un proceso de Ornstein–Uhlenbeck (centrado en 0) está asociado a una SDE lineal de la forma
+
+\begin{equation}
+    dx_t = -\alpha x_t dt + \sigma dW_t
+    \label{eq:ou_process}
+\end{equation}
+
+donde $\alpha, \sigma > 0$ son constantes. Como se verá, el parámetro $\alpha$ controla la tasa de reversión hacia la media, mientras que $\sigma$ determina la volatilidad del proceso. Para esta SDE, la ecuación de Fokker-Planck \eqref{eq:fokker_planck} correspondiente es:
+
+\begin{equation}
+    \frac{\partial p(x,t)}{\partial t} = a\frac{\partial}{\partial x} (x\, p(x, t)) + \frac{\sigma^2}{2} \frac{\partial^{2}p(x, t)}{\partial x^2}
+\end{equation}
+
+Además, considerando $\partial_{t}p=0$ es posible encontrar la distribución estácionaria de este tipo de procesos:
+
+\begin{equation}
+    \label{eq:ou_stationary}
+    0 = a\frac{\partial}{\partial x} (x\, p(x, t)) + \frac{\sigma^2}{2} \frac{\partial^{2}p(x, t)}{\partial x^2}
+\implies
+p_{\operatorname{est}}(x) = \sqrt{\frac{a}{\pi\sigma^{2}}}\exp\left(-\frac{ax^2}{\sigma^2}\right)
+\end{equation}
+
+En caso de necesitar la densidad marginal $p(x_t)$ de forma cerrada para este tipo de procesos, la fórmula de Itô \eqref{eq:itos_formula} permite obtener la siguiente solución:
+
+\begin{equation}
+    \label{eq:ou_solution}
+    x_t = e^{-\alpha t} x_0 + \sigma \int_0^t e^{-\alpha(t-s)} dW_s
+\end{equation}
+
+donde $x_0$ es la condición inicial y la integral se debe interpretar en el sentido de Itô.
+
+\paragraph{Propiedades}
+
+Una propiedad importante de este tipo de procesos es la reversión a la media, lo que significa que a tiempos largos, el proceso se estabilizará en 0, independientemente de la condición inicial. Más generalmente, es posible estabilizar el proceso a otro valor $\mu$ considerando la SDE
+
+\begin{equation}
+    dx_t = \alpha(\mu-x_t) dt + \sigma dW_t
+\end{equation}
+
+Los procesos de Ornstein–Uhlenbeck son unos de los procesos más simples que poseen está propiedad, por lo que son ampliamente utilizados para modelar fenómenos en distintas áreas. En la \autoref{fig:dm/ornstein_uhlenbeck} se realizó una simulación de este tipo de procesos utilizando el método de Euler-Maruyana dado en el \autoref{alg:euler-maruyana}, aunque es posible utilizar otros métodos de simulación más eficientes.
+
+\insertimage{dm/ornstein_uhlenbeck}{0.8}{Simulación mediante el algoritmo de Euler-Maruyama (ver \autoref{alg:euler-maruyana}) de 5 trayectorias para el proceso de Ornstein–Uhlenbeck $dx_t = 2(1-x_t)dt + \frac{1}{2}dW_t$ en el intervalo temporal $[0,5]$ y con condición inicial $x_0=10$.}
+
+Por otra parte, los procesos de Ornstein–Uhlenbeck cumplen que, dada la condición inicial, sus distribuciones marginales $x_t|x_0$ distribuyen normalmente, por lo que el proceso completo es un proceso gaussiano. Además, poseen este tipo de procesos poseen la propiedad de Markov (el futuro del proceso solo depende de su estado actual y no del pasado). Se puede probar que los procesos de Ornstein–Uhlenbeck son los únicos que cumplen las 3 propiedades nombradas hasta ahora.
+
+Es importante destacar que la propiedad de reversión a la media junto a la de ser un proceso gaussiano es más fuerte aún ya que este tipo de procesos es ergódico y tiene una distribución invariante gaussiana.
+
+Una observación adicional es que el análogo en tiempo discreto del proceso de Ornstein–Uhlenbeck es el proceso autorregresivo de primer orden AR(1), el cual viene dado por
+
+\begin{equation}
+    x_{t+1} = c + \phi x_t + \epsilon_t
+\end{equation}
+
+donde $|\phi|<1$ es el parámetro de reversión a la media y $\epsilon_t$ es un término de error con distribución normal. Este paralelismo se aprovecha para la estimación y simulación de procesos de Ornstein–Uhlenbeck en situaciones donde solo se dispone de datos en intervalos discretos de tiempo, como es común en series temporales financieras.
+
+\paragraph{Aplicaciones}
+
+Dado lo simple de este tipo de modelos, es común utilizarlos en distintas ciencias con el fin de poder análisis de fenómenos aleatorios. A continuación se enumeran algunas aplicaciones de los procesos de Ornstein–Uhlenbeck:
+
+\begin{itemize}
+    \item \textbf{Economía:} bajo la premisa de que las tasas de interés no pueden crecer indefinidamente y que a largo plazo se deben estabilizar en un valor medio, es posible modelar su evolución mediante este tipo de procesos (modelo de Vasicek). Bajo el mismo argumento se pueden utilizar procesos de Ornstein–Uhlenbeck para modelar el PIB de un país o tasas de cambio entre dos monedas.
+    \item \textbf{Biología:} se puede usar este tipo de procesos para modelar la evolución de una población, donde se asume que hay un valor de estabilización que se alcanzará en el largo plazo.
+    \item \textbf{Física:} originalmente este tipo de procesos se usó para modelar el movimiento aparentemente aleatorio de una partícula (modelo de Einstein) bajo un proceso de disipación de energía. El ejemplo más típico es el de un resorte, el cual se rige la ley de Hooke, sometido a una fuerza de roce. En el largo plazo, se espera que el resorte vuelva a su condición de equilibro.
+\end{itemize}
+
+En este trabajo se utilizarán estos modelos en el estudio de modelos generativos basados en difusión.
+
+\subsection{Modelos de difusión mediante el uso de SDEs}
+\label{dm/continuous_dm/sde}
+
+Algunos meses después de los trabajos de DDPM y DSM, los autores de \cite{song2021scorebased} notaron que ambos procesos de inyección de ruido correspondían a la discretización una SDE distinta. Con esta observación generalizaron el proceso de inyección de ruido mediante el uso de otras SDEs, usando el hecho de que para obtener la SDE asociada al proceso reverso solo hace falta entrenar un modelo de score.
+
+\subsubsection{SDEs asociadas a DDPM y DSM}
+
+En esta subsección se entregarán las SDEs que están asociados a los modelos DDPM y DSM\footnote{Al nombrar el modelo DSM se está haciendo referencia al proceso con varios niveles de ruido (ver \eqref{eq:dsm_loss}).} y se darán algunas de sus propiedades.
+
+\paragraph{DDPM}
+
+De acuerdo a \eqref{eq:ddpm_forward}, la cadena de Markov asociada al proceso de difusión del modelo DDPM es
+
+\begin{equation}
+    \label{eq:ddpm_forward_variance}
+    x_t = \sqrt{1-\beta_t} x_{t-1} + \sqrt{\beta_t} \epsilon_t,\quad \epsilon_t\sim\gaussian{0}{I_d}
+\end{equation}
+
+donde se ha usado $\beta_t:=1-\alpha_t$ para trabajar directamente con las varianzas. Se tiene el siguiente resultado:
+
+\begin{prop}[SDE asociada a DDPM]
+    Al pasar al continuo, la cadena de Markov \eqref{eq:ddpm_forward_variance} pasa a ser el proceso de Itô asociado a la siguiente SDE:
+
+    \begin{equation}
+        \label{eq:ddpm_sde}
+        dx_t = -\frac{1}{2}\beta_t x_t dt + \sqrt{\beta_t}dw_t, \quad x_0\sim \ptrue,\quad t\in[0,1]
+    \end{equation}
+
+    Además, para este proceso la varianza de $x_t$ esta siempre acotada por la varianza de $x_0$. Más aún, se demuestra que si $\var{x_0}=\identity{d}$ entonces $\var{x_t}=\identity{d}$.
+\end{prop}
+
+Dado que $x_t$ tiene varianza acotada, a esta SDE se le conocerá como \textit{variance preserving SDE} o \textit{VP-SDE}.
+
+\paragraph{DSM}
+
+El modelo DSM, si bien no entrega una cadena de Markov explícita, también se puede asociar a una SDE cuando la cantidad de niveles de ruido crece indefinidamente. Para esto, se puede usar el hecho de que este modelo utiliza kernels de perturbación gaussianos para construir una cadena de Markov que sea fácil de pasar al continuo.
+
+\begin{prop}[SDE asociada a DSM]
+    El modelo DSM con kernels de perturbación gaussianos isotrópicos $p_{\sigma}(\tilde x|x)=\gaussian{x}{\sigma^2\identity{d}}$ indexados por una familia de ruidos $(\sigma_k)_{k=1}^n$ está asociado a la siguiente cadena de Markov:
+
+    \begin{equation}
+        x_t = x_{t-1} + \sqrt{\sigma_t^2-\sigma^2_{t-1}} \epsilon_t,\quad \epsilon_t\sim\gaussian{0}{I_d}
+    \end{equation}
+
+    Esta cadena de Markov está asociada a la siguiente SDE:
+
+    \begin{equation}
+        \label{eq:sdm_sde}
+        dx_t = \sqrt{\frac{d\sigma_t^2}{dt}}dw_t
+    \end{equation}
+
+    donde $\frac{d\sigma_t^2}{dt}$ es una derivada (recordar que, en el continuo, $\sigma_t^2$ es función).
+\end{prop}
+
+\subsubsection{Generalización a otras SDEs}
+
+Los resultados anteriores motivan a definir una nueva familia de modelos generativos, donde ahora el proceso de difusión corresponderá a la solución de una SDE. La idea es transformar la distribución de los datos $\ptrue$ en una distribución $\pprior$ para luego, generar muestras utilizando el proceso reverso.
+
+Sea un proceso de Itô $(x_t)_{t\in[0,1]}$ solución de la SDE
+
+\begin{equation}
+    \label{eq:score_sde}
+    dx_t = f(x_t,t)dt+g(t) dw
+\end{equation}
+
+con $x_0 \sim p_0=\ptrue$ y $x_T\sim p_T=\pprior$. Por simplicidad en la notación, en esta sección se considerará que $g$ es una función escalar que solo depende de $t$. El objetivo es conocer la SDE del proceso inverso. Con esto, se podrán generar nuevas muestras simulando la SDE inversa comenzando desde $\pprior$. Un resultado fundamental para esto es el teorema de inversión de Anderson (ver \autoref{teo:anderson}), el cual afirma que el proceso inverso de \eqref{eq:score_sde} viene dado por la solución de la siguiente SDE:
+
+\begin{equation}
+    \label{eq:score_reverse_sde}
+    dx_t = \left[f(x_t,t)-g(t)^2 \score{x_t}{p_t(x_t)}\right]dt + g(t)d\overline{w}_t
+\end{equation}
+
+Donde $\overline{w}$ es un movimiento browniano fluyendo hacia atrás en el tiempo y $dt$ es un paso temporal infinitesimal negativo. $p_t(x_t)$ es la densidad marginal del proceso forward.
+
+Por lo tanto, para conocer completamente la SDE del proceso inverso de una SDE genérica, y así poder generar nuevas muestras, basta conocer la función score de la densidad marginal $p_t(x_t)$ en cada tiempo del proceso, por lo que este nuevo tipo de modelos también es de tipo score-matching. En la \autoref{fig:dm/score_sde} hay un diagrama de este modelo. Una vez teniendo un modelo de score $s_\theta(x,t)$ entrenado, este será usado en la SDE inversa para luego generar muestras a partir de él.
+
+\insertimage{dm/score_sde}{0.8}{SDEs de los procesos de difusión y \textit{denoising} para el modelo de difusión basado en una SDE, donde el proceso reverso depende únicamente del score a lo largo del proceso forward. Imagen obtenida desde \cite{song2021scorebased}.}
+
+La función de costo vendrá motivada como la generalización continua de las funciones de costo de los modelos DDPM y DSM ya que ambos son métodos basados en score y representan la discretización de una SDE. Para DDPM la función a minimizar (ver \autoref{prop:score_prediction}) es de la forma:
+
+\begin{equation}
+    L_{\text{DDPM}}(\theta) := \sum_{t=2}^T (1-\bar\alpha_t)\,\E{x_0\sim\ptrue, x_t\sim q(x_t|x_0)}{\norm{\nabla_{x_t}\log q(x_t|x_0) - s_\theta(x_t,t)}^2}
+\end{equation}
+
+Mientras que para DSM, la función a minimizar (ver \eqref{eq:dsm_loss}) es de la forma:
+
+\begin{align}
+    L_{\text{DSM}}(\theta) := \sum_{t=1}^T \sigma_t^2 \,\E{x\sim\ptrue(x),\,\tilde{x}\sim q_{\sigma_t}(\tilde{x}|x)}{\norm{\nabla_{\tilde{x}}\log q_{\sigma_t}(\tilde{x}|x) - s_\theta(\tilde{x}, \sigma_t)}^2}
+\end{align}
+
+Por lo tanto, se propone usar la siguiente generalización continua de las funciones de pérdida anteriores:
+
+\begin{equation}
+    L_{\text{SDE}}(\theta) := \E{t\sim\operatorname{Unif}([0,1])}
+    {\lambda(t)\,\E{x_0\sim p_0, x_t\sim p_{0t}(x_t|x_0)}{\norm{\score{x_t}{p_{0t}(x_t|x_0)} - s_\theta(x_t,t)}^2}}
+\end{equation}
+
+donde $p_{0t}(x_t|x_0)$ es el kernel de transición. Cuando $f(\cdot,t)$ es afín, el kernel de transición es gaussiano, donde la media y covarianza por lo general se puede obtener de forma cerrada. En particular, las SDEs \eqref{eq:sdm_sde} y \eqref{eq:sdm_sde} tienen kernels gaussianos. En SDEs más complejas, se puede resolver la ecuación de Fokker-Planck para obtener $p_{0t}(x_t|x_0)$ (ver \autoref{subsec:fokker_planck}).
+
+Por otra parte, para elegir la función de peso $\lambda(t)$ se seguirá el mismo enfoque usado en DDPM y DSM. Los poderadores de las sumas en $L_{\text{DDPM}}(\theta)$ y $L_{\text{DSM}}(\theta)$ tienen la siguiente forma estructural:
+
+\begin{itemize}
+    \item En DDPM: $(1-\bar\alpha_t)\propto 1/\E{}{\norm{\score{x_0}{q(x_t|x_0)}}^2}$.
+    \item En DSM: $\sigma_t^2\propto 1/\E{x\sim\ptrue(x),\,\tilde{x}\sim q_{\sigma_t}(\tilde{x}|x)}{\norm{\score{x}{p_{\sigma_t}(\overline{x}|x)}}^2}$
+\end{itemize}
+
+Por lo tanto, los autores de \cite{song2021scorebased} proponen normalizar usando la siguiente función de peso:
+
+\begin{equation}
+    \lambda(t) \propto \E{}{\norm{\score{x_t}{p_{0t}(x_t|x_0)}}^2}
+\end{equation}
+
+Ademñas, basándose en las SDEs de los modelos DDPM y DSM, los autores de \cite{song2021scorebased} también proponen una tercera SDE que funciona bien para el cálculo de verosimilitud:
+
+\begin{equation}
+    dx_t = -\frac{1}{2}\beta_t x dt + \sqrt{\beta_t\parent{1-\exp\parent{-2\int_0^t \beta(s)ds}}}dw_t
+\end{equation}
+
+El término de drift de esta SDE también es lineal, por lo que también posee kernels de transición gaussianos, cuyos parámetros tienen forma cerrada.
+
+Al igual que para la VP-SDE, la varianza se estabiliza en $I_d$ cuando $t\to\infty$. Sin embargo, Al comparar ambas SDEs usando la misma función de ruido $\beta_t$, se observa que la varianza de este proceso es menor a la varianza de la VP-SDE. Por este motivo, a esta SDE se le denominará \textit{sub-VP-SDE}.
+
+\subsubsection{Método de Euler-Maruyama}
+
+Para la generación de muestras, el modelo DDPM utiliza el algoritmo de \textit{ancestral sampling}, mientras que DSM utiliza \textit{Langevin sampling}. En el caso de un modelo con una SDE genérica, es necesario poder simular una trayectoria del proceso inverso para poder llegar a una muestra de $y_T\sim x_0=\ptrue$. En esta familia de modelos, el proceso de generación de muestras es más flexible ya que se puede utilizar cualquier técnica para generar trayectorias asociadas a la SDE del proceso reverso.
+
+Para una SDE genérica, es posible generar una muestra del proceso reverso utilizando métodos numéricos. Esto permite explícitamente manejar el trade-off entre precisión y eficiencia. Algunos métodos que que utilizan en \cite{song2021scorebased} es el algoritmo de Euler-Maruyama y los métodos estocásticos de Runge-Kutta. En particular, el método \textit{ancestral sampling} de DDPM corresponde a una discretización particular de la SDE \eqref{eq:ddpm_sde}.
+
+El método de Euler-Maruyama es un procedimiento numérico para la aproximación de soluciones de ecuaciones diferenciales estocásticas (SDEs) y corresponde a la extensión natural del método de Euler para ODEs al contexto estocástico.
+
+Dada una SDE de la forma $dx = \mu(x,t)dt + \sigma(x,t)dW_t$ con condición inicial $x_0\sim p(x_0)$ (determinista o aleatoria), el algoritmo de Euler-Maruyama construye la siguiente cadena de Markov como aproximación del proceso estocástico $x$:
+
+\begin{algorithm}
+    \caption{Algoritmo de Euler-Maruyama para SDEs}
+    \label{alg:euler-maruyana}
+    \begin{algorithmic}[1]
+        \State \textbf{Entrada:} funciones $\mu$ y $\sigma$, distribución inicial $p(x_0)$, tiempo final $T$ y número de pasos $N$.
+        \State Generar y definir $x_0\sim p(x_0)$.
+        \State Calcular $\Delta t = \frac{T}{N}$.
+        \For{$i = 0$ to $N-1$}
+        \State Generar una muestra $dW_i\sim\gaussian{0}{\Delta t}$.
+        \State Calcular $x_{i+1} = x_i + \mu(x_i, t_i) \Delta t + \sigma(x_i, t_i) dW_i$
+        \EndFor
+    \end{algorithmic}
+\end{algorithm}
+
+Es importante notar que, aunque el método de Euler-Maruyama es conceptualmente sencillo, puede tener problemas de estabilidad y precisión, especialmente para SDEs con términos de drift o dispersión poco regulares. Por lo tanto, para SDEs más complejas, pueden ser necesarios métodos numéricos más avanzados.
+
+\subsubsection{Probability flow ODE}
+
+Dado el proceso de difusión \eqref{eq:score_sde}, es posible reordenar los términos de su ecuación de Fokker-Planck (ver \autoref{subsec:fokker_planck}) para obtener otro proceso (con su respectiva ecuación de Fokker-Planck) pero con la propiedad de que este nuevo proceso sea determinista. De esta forma, el proceso estocástico \eqref{eq:score_sde} que transformaba cada elemento de la distribución de los datos $\ptrue$ en elementos de $\pprior$ ahora se convierte en un mapa (i.e., una función) que asocia biunívocamente cada elemento del soporte de $\ptrue$ con elementos del soporte de $\pprior$. Dicho proceso determinista evoluciona de acuerdo a la siguiente ecuación diferencial ordinaria (ODE)\footnote{Notar la similitud con la SDE del proceso reverso dada en \eqref{eq:score_reverse_sde}. Si bien ambos procesos tienen las mismas distribuciones marginales, la principal diferencia es que este nuevo proceso es determinista.}:
+
+\begin{equation}
+    \label{eq:probability_flow_dm}
+    dx_t = \parent{f(x_t,t)-\frac{1}{2}g(t)^2\score{x_t}{p_t(x_t)}}dt
+\end{equation}
+
+Donde toda la aleatoriedad del proceso ocurre en la generación de la muestra inicial $x_0$ (o la muestra final $x_T$ si se recorre el proceso en sentido reverso). Por otra parte, es importante notar que esta ODE corresponde a la formulación continua del proceso determinista usado en DDIM (ver \autoref{dm/discrete_dm/improvements}), lo que nuevamente permite conectar las formulaciones discretas con las formulaciones continuas de los modelos de difusión.
+
+La siguiente proposición enuncia este resultado con más generalidad:
+
+\begin{prop}[probability flow ODE]
+
+    Dada una SDE de la forma
+
+    \begin{equation}
+        dx_t = f(x_t,t)dt + G(x_t,t)dw_t
+    \end{equation}
+
+    donde $f:\R^d\times[0,1]\to\R$ y $G:\R^d\times[0,1]\to\matrixspace{d,d}{\R}$, el siguiente proceso determinista tiene las mismas densidades marginales $\{p_t\}_{t\in[0,T]}$ que el proceso estocástico asociado a la SDE:
+
+    \begin{equation}
+        \frac{dx_t}{dt} = \tilde{f}(x_t,t), \quad x_0\sim p_0(x_0)
+    \end{equation}
+
+    donde
+
+    \begin{equation}
+        \tilde{f}(x_t,t) = f(x,t) - \frac{1}{2}\nabla\cdot\parent{G(x,t)G(x,t)^\top} - \frac{1}{2} G(x,t)G(x,t)^\top \score{x}{p_t(x)}
+    \end{equation}
+
+\end{prop}
+
+Por lo tanto, es posible generar muestras a partir de la misma distribución que la SDE reversa comenzando con una muestra $x_T\sim p_T(x_T)$ y resolviendo la EDO hacia atrás en el tiempo. En la \autoref{fig:dm/score_prob_flow} se puede ver una comparación del proceso de difusión y denoising seguido de forma estocástica y usando esta versión determinista.
+
+\insertimage{dm/score_prob_flow}{1}{Ilustración de los procesos forward y backward en un modelo de difusión. El proceso forward comienza con una distribución bimodal $p_0=\ptrue$ y termina en una distribución gaussiana $p_T=\pprior$. El proceso backward comienza desde la distribución prior y termina en la distribución de los datos. Las curvas erráticas muestran trayectorias del proceso estocástico para cuatro condiciones iniciales obtenidas desde $x_0\sim \ptrue(x_0)$. En el proceso forward, las curvas blancas muestran la evolución de la \textit{probability flow ODE} al comenzar desde las muestras $x_0$ obtenidas. En el proceso backward las curvas blancas muestran como el proceso determinista regresa a las muestras $x_0$ originales al comenzar desde $x_T$. Imagen obtenida desde \cite{song2021scorebased}.}
+
+Esta ODE es conocida como \textit{probability flow ODE} y puede ser resuelta con cualquier algoritmo clásico, evitando tener que usar simuladores estocásticos. La demostración de esta propiedad en una versión más general se encuentra en \cite{song2021scorebased}.
+
+Notar que, al igual que para la SDE reversa, solo es necesario conocer el score de las densidades marginales $(p_t)_{t\in[0,T]}$, por lo que se puede utilizar un modelo entrenado para el proceso de difusión basado en una SDE para generar muestras a partir de la \textit{probability flow ODE}. Por otra parte, esta formulación determinista de los modelos de difusión será utilizada en la \autoref{ot/dynamic/dm}, donde la asignación de una muestra inicial $x_0\in\R^d$ con su posición final $x_T\in\R^d$ será interpretada como un mapa de transporte óptimo en el sentido de Monge, mientras que la versión estocástica original podrá ser comparada con la regularización entrópica en el \autoref{eot_sbp}, generando así una estrecha relación entre los modelos de difusión y el problema del puente de Schrödinger.
+
+\subsubsection{Generación condicional}
+
+Si bien esta nueva familia de modelos está construida para generar muestras desde $p_0=\ptrue$, es posible utilizar este mismo modelo ya entrenado para generar muestras condicionales a partir de una distribución condicional $p_0(x_0|y)$ similar a lo realizado mediante \textit{guidance} en la \autoref{dm/discrete_dm/improvements}. En efecto, es posible modificar el teorema de Anderson para obtener el proceso inverso condicional $(x_t|y)_{t\in[0,T]}$:
+
+\begin{teo}[inversión de Anderson, versión condicional]
+    \label{teo:anderson_conditional}
+
+    Dado un proceso estocástico $(x_t)_{t\in[0,T]}$ asociado a la SDE $dx_t=\mu(x_t,t)dt+\sigma(t)dW_t$ tal que $\mu$ y $\sigma$ son lo suficientemente regulares como para que la densidad marginal $p_t(x_t)$ sea la única solución suave de la ecuación de Fokker-Planck asociada. Entonces, existe un único proceso reverso $(Y_t)_{t\in[0,T]}=(X_{T-t})_{t\in[0,T]}$ cuya SDE viene dada por:
+
+    \begin{equation}
+        dy_t = \mu_{\operatorname{cond}}(y_t,t,c) dt + \sigma(y_t,t)d\overline{w}_t
+        \label{eq:reverse_conditional_sde}
+    \end{equation}
+
+    donde $\overline{w}$ es un movimiento browniano fluyendo hacia atrás en el tiempo y
+
+    \begin{equation}
+        \mu_{\operatorname{cond}}(y_t,t,c) := f(y_t,t) - \nabla_{y_t}\cdot\parent{\sigma(x_t,t)\sigma(x_t,t)^\top} - \sigma(x_t,t)\sigma(x_t,t)^\top \parent{\score{y_t}{p_{T-t}(y_t)} + \score{y_t}{p_{T-t}(c|y_t)}}
+    \end{equation}
+
+\end{teo}
+
+\begin{proof}
+    Suponiendo una distribución inicial condicional $p_t(y_t|c)$, la densidad condicional en tiempo $t$ es $p_t(y_t|c)$, por lo tanto, usando \ref{teo:anderson} se tiene que el drift de la SDE reversa es:
+
+    \begin{equation}
+        f(y_t,t) - \frac{1}{2}\nabla_{y_t}\cdot\parent{\sigma(x_t,t)\sigma(x_t,t)^\top} - \frac{1}{2}\sigma(x_t,t)\sigma(x_t,t)^\top \score{y_t}{p_{T-t}(y_t|c)}
+    \end{equation}
+
+    Dado que $p_t(y_t|c)\propto p_t(y_t)p(c|y_t)$, el score condicional se puede escribir como:
+
+    \begin{equation}
+        \score{y_t}{p_t(y_t|c)} = \score{y_t}{p_t(y_t)} + \score{y_t}{p_t(c|y_t)}
+    \end{equation}
+
+    Con lo cual se obtiene el drift de \eqref{eq:reverse_conditional_sde}.
+\end{proof}
+
+En el caso de considerar $\sigma(x,t)=\sigma(t)$ escalar en vez de matricial, los procesos \eqref{eq:reverse_sde} y \eqref{eq:reverse_conditional_sde} toman, respectivamente, la siguiente forma:
+
+\begin{align}
+    dy_t & = \left[\mu(y_t,t)-\sigma(t)^2\score{y_t}{p_{T-t}(y_t)}\right]dt + \sigma(t)d\overline{w}_t                                        \\
+    dy_t & = \left[\mu(y_t,t)-\sigma(t)^2\parent{\score{y_t}{p_{T-t}(y_t)} + \score{y_t}{p_{T-t}(c|y_t)}}\right]dt + \sigma(t)d\overline{w}_t
+\end{align}
+
+Con esto, puede generar una muestra desde $p_t(x_t,y)$ comenzando desde $p_T(x_T|y)$ y resolviendo la siguiente SDE reversa:
+
+\begin{equation}
+    dx_t = \left[f(x_t,t)-g(t)^2\parent{\score{x_t}{p_t(x_t)} + \score{x_t}{p_t(y|x_t)}}\right]dt + g(t)d\overline{w}_t
+\end{equation}
+
+Por lo tanto, teniendo un modelo incondicional $\score{x_t}{p_t(x_t)}$ ya entrenado, para generar muestras condicionales, basta con entrenar otro modelo independiente $\score{x_t}{p_t(y|x_t)}$. A continuación se nombran algunos condionales probados por \cite{song2021scorebased}.
+
+Cuando se tiene un dataset de datos etiquetados $(x,y)$, la formulación para la generación condicional permite generar muestras con una cierta etiqueta. Para esto, si $y$ representa una etiqueta de clase, se puede entrenar un clasificador dependiente del tiempo $p_t(y|x_t)$ para luego obtener el score $\score{x_t}{p_t(y|x_t)}$. Dado que la SDE del proceso forward es tratable, los pares de entrenamiento $(x_t,y)$ se pueden crear fácilmente empezando con una muestra $(x_0,y)$ desde el dataset, e iterando según $x_t\sim p_{0t}(x_t|x_0)$. Para el entrenamiento del clasificador dependiente del tiempo, se puede considerar una mixtura de funciones de pérdida asociadas a las entropías cruzadas del clasificador para cada instante de tiempo.
+
+\subsection{Limitaciones de los modelos de difusión a tiempo continuo}
+\label{dm/continuous_dm/limitations}
+
+Para concluir este capítulo, se nombrarán algunas limitaciones tanto teóricas como prácticas que poseen los modelos de difusión, las cuales serán abordadas desde distintos puntos de vista en los siguientes capítulos.
+
+\paragraph{Convergencia asintótica a la distribución prior}
+
+Al generar muestras comenzando el proceso reverso desde la distribución prior $\pprior$, los modelos de difusión asumen que para un tiempo $T$ suficientemente grande, la distribución del proceso de difusión se aproxima casi de forma perfecta a la distribución prior. Sin embargo, al ser esta una distribución asintótica, la convergencia solo se alcanza cuando $T \to \infty$. En la práctica, esto puede generar discrepancias entre la distribución real $\ptrue$ y la distribución obtenida por el proceso reverso. Esta limitación intrínseca del los modelos de difusión plantea desafíos en la implementación y puede afectar la calidad de las muestras generadas tal como se discute en \cite{debortoli2023diffusion}. Para abordar este problema, en el \autoref{eot_sbp} se estudiará la transformación de una distribución a otra mediante el problema del puente de Schrödinger.
+
+\paragraph{Limitación en las transformaciones}
+
+Por construcción de los modelos de difusión, estos están diseñados para transformar una distribución de datos $\ptrue$ en una distribución $\pprior$ (generalmente gaussiana), y viceversa. Sin embargo, no ofrecen un marco general para trabajar entre dos distribuciones arbitrarias $\mu$ y $\nu$. Esta limitación será abordada en el \autoref{ot}, donde se estudiará el problema de transformar de forma eficiente una distribución de probabilidad en otra.
+
+\paragraph{Falta de garantías teóricas robustas}
+
+Como consecuencia de la primera limitación mencionada, los modelos de difusión carecen de algunas garantías teóricas sólidas que sí están presentes en otros enfoques como el transporte óptimo. Por ejemplo, no se han establecido resultados teóricos de convergencia para el proceso de optimización en modelos de difusión generales, ni se han proporcionado cotas de error precisas para la aproximación de la distribución objetivo. Esta falta de garantías teóricas puede limitar la confiabilidad y la interpretabilidad de este tipo de modelos.
+
+\paragraph{Sensibilidad a la elección de la SDE}
+
+La elección de la SDE para el proceso de difusión puede tener un impacto significativo en el rendimiento del modelo tal como lo demostró el trabajo de \cite{song2021scorebased}. Sin embargo, no existe un marco teórico completo que guíe la selección óptima de la SDE para una tarea dada (aunque hay trabajos en esa dirección como el de \cite{karras2022elucidatingdesignspacediffusionbased}), lo que puede llevar a una búsqueda heurística de la mejor configuración.
+
+\paragraph{Dificultad en la interpretabilidad}
+A diferencia de algunos métodos de transporte óptimo que ofrecen interpretaciones geométricas claras (como las geodésicas en el espacio de Wasserstein estudiadas en la \autoref{ot/dynamic/wasserstein}), los modelos de difusión pueden ser menos interpretables en términos de la transformación que realizan entre las distribuciones inicial y final. Esta falta de interpretabilidad puede dificultar la comprensión de cómo el modelo está generando o transformando los datos. Sin embargo, en \cite{khrulkov2022understandingddpmlatentcodes} sugieren que los modelos de difusión realizan (o aproximan muy bien) un transporte óptimo entre $\ptrue$ y $\pprior$. Esto último es revisado en la \autoref{ot/dynamic/dm}.
+
+\paragraph{Complejidad computacional}
+A pesar de que los modelos de difusión suelen generar resultados de muy alta calidad, su entrenamiento y muestreo pueden ser computacionalmente costosos, especialmente para procesos de difusión largos. Esto contrasta con algunos métodos de transporte óptimo que, una vez resueltos, permiten una transformación más directa entre distribuciones. Si bien propuestas recientes como \cite{song2023consistencymodels} han permitido disminuir considerablemente la cantidad de pasos necesarios para la generación, aún no se logra alcanzar el mapeo uno a uno entre los elementos de la distribución de los datos y la distribución prior como sí ocurre al usar transporte óptimo.
+
+Estas limitaciones motivan la exploración de enfoques alternativos y complementarios, como el transporte óptimo, el cual se estudiará en el siguiente capítulo. Este nuevo enfoque ofrece un marco teórico robusto con garantías matemáticas sólidas y una interpretación geométrica natural al realizar transformaciones entre distribuciones. Además, existe una conexión profunda entre los modelos de difusión y ciertos problemas de transporte óptimo entrópico, lo que sugiere que un estudio conjunto de ambos enfoques puede llevar a avances significativos en la comprensión y aplicación de los modelos generativos, ganando las buenas propiedades empíricas de los modelos de difusión junto a las buenas garantías teóricas que entrega el marco teórico del transporte óptimo y el problema de Schrödinger.
+
+Es importante destacar que en los últimos años se ha intentado incluir herramientas del transporte óptimo en los modelos de difusión con el fin de aminorar las limitaciones mencionadas. Por último, el problema del puente de Schrödinger, el cual es equivalente a la formulación dinámica del transporte óptimo entrópico, ha sido ampliamente estudiado en los últimos años desde la comunidad del aprendizaje automático dadas sus ventajas como modelo generativo., teniendo una gran cantidad de perspectivas para abordar y resolver el problema (ver \autoref{eot_sbp/dynamic}).

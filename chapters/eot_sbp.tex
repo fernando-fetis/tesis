@@ -1,0 +1,650 @@
+\chapter{Regularización entrópica y problema de Schrödinger}
+\label{eot_sbp}
+
+Si bien el problema de Kantorovich discreto \eqref{eq:kantorovich_discrete} es un problema de programación lineal (en particular, es convexo), es costoso de resolver por su cantidad cuadrática de incógnitas y nada garantiza la unicidad de la solución\footnote{Si bien se puede tener múltiples minimizadores, el valor mínimo es único, por lo que la no unicidad no influye sobre el valor de la distancia de Wasserstein entre dos distribuciones. Sin embargo, si puede generar problemas al aproximarla numéricamente.}, la cual en general no se tiene cuando el problema presenta cierto tipo de simetrías. Si bien la formulación dual \eqref{eq:kantorovich_dual_discrete} permite disminuir el número de incógnitas a una cantidad lineal, no soluciona el problema de la no unicidad, lo cual puede generar problemas al momento de resolver numéricamente el problema de optimización primal o dual. Por otra parte, aún teniendo la capacidad y precisión computacional suficiente para resolver el problema de Kantorovich, este problema sufre de la maldición de la dimensionalidad al intentar aproximar la distancia de Wasserstein mediante una aproximación empírica.
+
+En \cite{cuturi2013sinkhorn} se propuso una técnica de regularización para el problema de Kantorovich, la cual posteriormente resultó ser equivalente a la formulación estática del puente de Schrödinger. La técnica de regularización entrópica consiste en agregar un término adicional a la función objetivo del transporte óptimo con el fin de poder obtener un problema dual que se puede resolver eficientemente.
+
+\section{Transporte óptimo regularizado}
+\label{eot_sbp/regularized}
+
+Una forma de reparar el problema de la no unicidad es regularizar el problema de Kantorovich agregando un término conveniente que transforme la función objetivo en una función estrictamente convexa, permitiendo garantizar un minimizador único. Con esto, el problema de optimización regularizado es de la forma:
+
+\begin{equation}
+	\inf_{P\in \Pi_d(\mu,\nu)} \sum_{i=1}^n \sum_{j=1}^m C_{ij}P_{ij} + \epsilon \cdot\operatorname{Regularizador}(P)
+	\label{eq:eot_motivation_discrete}
+\end{equation}
+
+en el caso discreto y
+
+\begin{equation}
+	\inf_{\pi\in \Pi(\mu,\nu)} \int_{\R^n\times\R^m} c\d\pi + \epsilon \cdot\operatorname{Regularizador}(\pi)
+	\label{eq:eot_motivation_continuous}
+\end{equation}
+
+en su versión continua. En ambos casos $\epsilon>0$ es un ponderador que indica cuánto peso se le da al regularizador durante la optimización. Recordando que el problema de Kantorovich define una distancia cuando $\mu,\nu\in\probmeasure{\R^d}$ son medidas en un mismo espacio, este nuevo problema de optimización puede verse como una versión suavizada de la distancia de Wasserstein.
+
+Para la elección de la función de regularización, es útil observar que las soluciones del problema de Kantorovich por lo general pueden ser muy inestables con respecto a leves variaciones en las medidas $\mu$ y $\nu$ o en el funcional de costo (ver \autoref{fig:eot_sbp/ot_instability}). Dado que esto no es una propiedad deseable, se puede elegir un regularizador que además de ser estrictamente convexo, promueva soluciones estables, pudiendo interpretar los problemas regularizados \eqref{eq:eot_motivation_discrete} y \eqref{eq:eot_motivation_continuous} como un trade-off entre tener un plan de Kantorovich inestable y tener una plan de transporte sub-óptimo pero más estable a cambios en los parámetros del problema. En este caso, el regularizador también se puede entender como un regularizador sobre el modelo ya que evita el sobreajuste a los datos de entrenamiento y le entrega robustez al problema con respecto a la función objetivo, donde el término adicional puede ser considerado como una incertidumbre sobre el funcional de costo real. Por otra parte, en muchos casos donde se utiliza la distancia de Wasserstein (p.g. como función de pérdida en un modelo de aprendizaje automático) es suficiente tener una aproximación razonable, por lo que el sesgo regularizador inducido en el problema de Kantorovich no afecta considerablemente a la utilidad de la métrica de Wasserstein.
+
+\insertimage{eot_sbp/ot_instability}{0.6}{Inestabilidad del mapa de Monge bajo pequeñas perturbaciones en los parámetros del problema. En este caso, todos los elementos de $\xspace$ e $\yspace$ fueron perturbados con un ruido gaussiano de baja varianza.}
+
+Como se verá en la siguiente subsección, una buena elección para el regularizador es la función de información media, la cual es estrictamente convexa y, además, promueve soluciones más suaves (en algún sentido). En particular, en el caso discreto, este regularizador forzará a que el plan de transporte entrópico óptimo sea denso, en el sentido de que todos los puntos en $\xspace=\{x_i\}_{i=1}^n$ envían masa a todos los puntos en $\yspace=\{y_j\}_{j=1}^m$, a diferencia de lo que se observa en muchos casos donde los planes de Kantorovich son \textit{deterministas} al estar asociados a mapas de Monge donde no se permite división de masa por parte de los elementos de $\xspace$. Además, como se verá en la \autoref{eot_sbp/static_sbp/sinkhorn}, este problema se puede resolver de forma eficiente, siendo esto último uno de los mayores beneficios del transporte óptimo entrópico.
+
+\subsection{Regularización entrópica}
+\label{eot_sbp/regularized/eot}
+
+Para el problema de Kantorovich discreto \eqref{eq:kantorovich_discrete} se utilizará como regularizador el negativo de la función de entropía con el fin de maximizar la entropía del plan de transporte óptimo. Por otra parte, se verá que utilizar este regularizador es equivalente (salvo constantes aditivas) a regularizar el problema utilizando la divergencia de Kullback-Leibler. Este último punto es el que permitirá escribir el problema de transporte óptimo entrópico como un caso particular del problema del puente de Schrödinger en la \autoref{eot_sbp/static_sbp}.
+
+\subsubsection{Problema entrópico discreto}
+
+Para estudiar el problema de transporte óptimo entrópico se comenzará dando su formulación en un escenario discreto, donde $\xspace=\{x_i\}_{i=1}^n$ e $\yspace=\{y_j\}_{j=1}^m$ son conjuntos finitos que serán dotados de medidas discretas.
+
+Se comenzará definiendo la entropía de una medida de probabilidad discreta:
+
+\begin{defn}[entropía discreta]
+	Para una medida discreta $\mu\in\probmeasure{\xspace}$ con vector de probabilidad $a\in\Sigma^n$, se define la entropía discreta de $\mu$ como:
+
+	\begin{equation}
+		\label{eq:discrete_entropy}
+		\entropy{\mu} := - \sum_{i=1}^n a_i\log(a_i)
+	\end{equation}
+\end{defn}
+
+Dado que la medida discreta $\mu\in\probmeasure{\xspace}$ se identifica con el vector $a\in\Sigma_n$, es usual escribir $\entropy{a}$ en vez de $\entropy{\mu}$. Del mismo modo, dado que las medidas medidas $\mu\in\probmeasure{\xspace\times\yspace}$ se identifican con su matriz de probabilidades\footnote{En este caso, la suma en \eqref{eq:discrete_entropy} es sobre todos los elementos de la matriz de probabilidades $P$.} $P\in\matrixspace{n,m}{[0,1]}$, se suele escribir $\entropy{P}$ en vez de $\entropy{\mu}$.
+
+Se verá que esta función cumple las propiedades deseadas:
+
+\begin{prop}
+	\label{prop:discrete_entropy_properties}
+	Las siguientes propiedades son ciertas:
+
+	\begin{enumerate}
+		\item La función de entropía discreta $\mu\mapsto \entropy{\mu}$ es estrictamente cóncava y, en consecuencia, el regularizador $\operatorname{Regularizador}(P)=-\entropy{P}$ es estrictamente convexo y el problema \eqref{eq:eot_discrete_entropy} tiene solución única.
+
+		\item Dadas dos medidas discretas, $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$, con vectores de probabilidad $a\in\Sigma_n$ y $b\in\Sigma_m$ respectivamente, el problema de optimización
+
+		      \begin{equation}
+			      \label{eq:entropy_maximizer}
+			      \max_{P\in\Pi_d(\mu,\nu)} \entropy{P}
+		      \end{equation}
+
+		      es maximizado por la matriz $ab^\top\in\matrixspace{n,m}{[0,1]}$, la cual es la matriz de probabilidades asociada a la medida producto $\mu\otimes\nu\in\probmeasure{\xspace\times\yspace}$.
+	\end{enumerate}
+\end{prop}
+
+\begin{proof}
+	Para la primera proposición, se verá que la función de entropía discreta definida en \autoref{eq:discrete_entropy} tiene matriz hessiana definida negativa para toda medida $\mu\in\probmeasure{\xspace}$:
+
+	\begin{equation}
+		\frac{\partial\mathcal{H}}{\partial a_i}(\mu) = -\parent{\log(a_i) + 1}
+		\implies \frac{\partial^2\mathcal{H}}{\partial a_i b_j}(\mu) =
+		\begin{cases}
+			\frac{-1}{a_i} & \text{si } i=j     \\
+			0              & \text{si } i\neq j
+		\end{cases}
+	\end{equation}
+
+	Por lo tanto, $\hessian{\entropy{\mu}} = \diag{\frac{-1}{a_1},\ldots,\frac{-1}{a_n}}$ y, así, todos los valores propios de $\hessian{\entropy{\mu}}$ son negativos\footnote{Recordar que los valores propios de una matriz diagonal son precisamente los valores de su diagonal.}, por lo que la matriz es definida negativa para toda medida $\mu\in\probmeasure{\xspace}$.
+
+	Para la segunda proposición, el problema de optimización con sus restricciones escritas de forma explícita es:
+
+	\begin{align}
+		\max_{P\in\matrixspace{n,m}{\R}} \quad & -\sum_{i,j=1}^{n,m} P_{ij}\log(P_{ij})                                \\
+		\text{s.a:} \quad                      & a_i - \sum_{j=1}^m P_{ij} = 0,\quad \forall i\in\{1,\ldots,n\}        \\
+		                                       & b_j - \sum_{i=1}^n P_{ij} = 0,\quad \forall j\in\{1,\ldots,m\}        \\
+		                                       & -P_{ij}\leq 0, \quad \forall i\in\{1,\ldots,n\},\, j\in\{1,\ldots,m\}
+	\end{align}
+
+	Dado que el problema es convexo, se pueden utilizar las condiciones de Karush–Kuhn–Tucker (KKT) para identificar a un máximo. El lagrangiano del problema $L:\matrixspace{n,m}{\R}\times\matrixspace{n,m}{\R}\times\R^n\times\R^m\to\R$ es:
+
+	\begin{equation}
+		L(P,\lambda,\kappa,\eta) =
+		-\sum_{i,j=1}^{n,m} P_{ij}\log(P_{ij})
+		+ \kappa_i \parent{a_i - \sum_{j=1}^m P_{ij}}
+		+ \eta_j \parent{b_j - \sum_{i=1}^n P_{ij}}
+		+ \lambda_{ij}(-P_{ij})
+	\end{equation}
+
+	Las condiciones de KKT para este problema son:
+
+	\begin{itemize}
+		\item Factibilidad: $P \in\Pi_d(\mu,\nu)$
+		\item Holgura complementaria: $\lambda_{ij}(-P_{ij})=0, \forall i\in\{1,\ldots,n\},\, j\in\{1,\ldots,m\}$
+		\item $\lambda_{ij}\geq 0, \forall i\in\{1,\ldots,n\},\, j\in\{1,\ldots,m\}$.
+		\item Punto crítico para el lagrangiano: $\nabla_P L = 0$
+	\end{itemize}
+
+	Para que la última condición se cumpla es necesario que:
+
+	\begin{equation}
+		\frac{\partial L}{\partial P_{ij}}(P,\lambda,\kappa,\eta) = -\parent{\log(P_{ij})+1} - \kappa_i - \eta_j - \lambda_{ij} = 0 \implies P_{ij} = e^{-1 - \kappa_i - \eta_j - \lambda_{ij}}
+	\end{equation}
+
+	Se verá que es posible encontrar una tripleta $(P,\kappa,\eta)$ que cumpla las condiciones de KKT cuando $\lambda_{ij}=0$. Esta última igualdad permite escribir $P_{ij}$ como un producto de la forma $P_{ij} = p_i q_j$.
+
+	Por otra parte, para que la condición de factibilidad se cumpla es necesario que:
+
+	\begin{align}
+		\sum_{j=1}^m P_{ij} = a_i \implies p_i \sum_{j=1}^m q_j = a_i \implies p_i = a_i \\
+		\sum_{i=1}^n P_{ij} = b_j \implies q_j \sum_{i=1}^n p_i = b_j \implies q_j = b_j
+	\end{align}
+
+	y, por lo tanto, con $P_{ij} = a_i b_j$ se cumplen todas las condiciones de KKT, por lo que $P=ab^\top$ es un máximo del problema.
+
+	Por último, la matriz $P=ab^\top$ está asociada a la medida producto $\mu\otimes\nu$ de acuerdo a lo expuesto en \autoref{ot/kantorovich/primal} para mostrar que $\Pi_d(\mu,\nu)$ no es vacío.
+\end{proof}
+
+Notar que el mapa de transporte que maximiza la entropía en \eqref{eq:entropy_maximizer} es la medida producto $\mu\otimes\nu$ definida para cada par $(x_i,y_j)\in\xspace\times\yspace$ como
+
+\begin{equation}
+	(\mu\otimes\nu)(\{x_i\}\times\{y_j\}) = \mu(\{x_i\})\,\nu(\{y_j\}) = (ab^\top)_{ij} = a_i b_j
+\end{equation}
+
+En consecuencia, este mapa de transporte distribuye la masa de cada $x_i\in\xspace$ en cada $y_j\in\yspace$ de forma proporcional a su masa $\nu(\{y_j\})=b_j$, por lo que la cantidad de masa transferida corresponde a $a_i b_j$. Recordando que en el caso discreto siempre se considera que $a_i,b_j>0$, el mapa de transporte $\mu\otimes\nu$ transporta masa a todos los elementos de $\yspace$ desde todos los elementos de $\xspace$, donde esta última propiedad cumple la función de suavizar la solución obtenida por el problema de Kantorovich no regularizado en \eqref{eq:kantorovich_discrete}.
+
+Con estas propiedades demostradas, el problema de transporte óptimo entrópico con $\operatorname{Regularizador}(P)=-\entropy{P}$ es el siguiente:
+
+\begin{equation}
+	\label{eq:eot_discrete_entropy}
+	\inf_{P\in \Pi_d(\mu,\nu)} \sum_{i=1}^n \sum_{j=1}^m C_{ij}P_{ij}
+	-\epsilon \cdot\sum_{i=1}^{n} \sum_{j=1}^m P_{ij}\log(P_{ij})
+\end{equation}
+
+En la \autoref{fig:eot_sbp/entropic_solution_effects} se puede observar cómo se traslada la medida óptima dentro de $\Pi_d(\mu,\nu)$ al aumentar el valor de $\epsilon$. Dado que el problema de Kantorovich discreto no regularizado es un problema de programación lineal, el argumento minimizante se encontrará siempre en el vértice del polítopo $\Pi_d(\mu,\nu)$. Al aumentar el valor de $\epsilon$, la solución óptima para el problema entrópico tiende a alejarse de los vértices y converger hacia un centro de alta entropía. Más aún, se puede demostrar que la matriz óptima para este problema $P^*\in \Pi_d(\mu,\nu)$ tiene todas sus coordenadas positivas, por lo que todos los puntos de $\xspace$ envían transportan masa a todos los elementos de $\yspace$.
+
+\insertimage{eot_sbp/entropic_solution_effects}{0.6}{Evolución de la solución óptima $P_\epsilon$ del problema $\min_{P\in\Pi_d(a,b)} \kantoroviche{P}$ para distintos valores de $\epsilon$. Imagen obtenida desde \cite{peyré2020computational}.}
+
+Por otra parte, debido a que la medida producto maximiza la función de entropía discreta en \eqref{eq:entropy_maximizer}, el problema entrópico \eqref{eq:eot_discrete_entropy} entregará una solución que se podrá interpretar como una interpolación entre el mapa de Kantorovich y el mapa de transporte trivial $\mu\otimes\nu$. Esto sugiere que, posiblemente, el regularizador $-\entropy{H}$ sea equivalente a otro que promueva soluciones similares a la medida producto $\mu\otimes\nu$. Para estudiar esto, se dará una versión discreta de la divergencia de Kullback-Leibler utilizada para medir discrepancias entre medidas en el \autoref{dm}:
+
+\begin{defn}[Divergencia de Kullback-Leibler, caso discreto]
+	Dadas dos medidas discretas $\mu,\nu \in\probmeasure{\xspace}$ con vectores de probabilidad $a,b\in\Sigma_n$ respectivamente, se define la divergencia de Kullback-Leibler entre $\mu$ y $\nu$ como:
+
+	\begin{equation}
+		\label{eq:kl_discrete}
+		\KL{\mu}{\nu} := \sum_{i=1}^{n} a_i\log\parent{\frac{a_i}{b_i}}
+	\end{equation}
+\end{defn}
+
+Notar que, al igual que en la entropía discreta \eqref{eq:discrete_entropy}, para calcular la divergencia de Kullback-Leibler de una medida en un espacio producto $\xspace\times\yspace$, será necesario que la suma en \eqref{eq:kl_discrete} sea sobre todos los elementos de la matriz de probabilidad asociada a la medida.
+
+Con esta definición, se tiene el siguiente resultado:
+
+\begin{prop}
+	Dadas dos medidas discretas, $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$, con vectores de probabilidad $a\in\Sigma_n$ y $n\in\Sigma_m$ respectivamente, entonces, para un coupling discreto $\pi\in\Pi_d(\mu,\nu)$ se tiene que:
+
+	\begin{equation}
+		\KL{\pi}{\mu\otimes\nu} = -H(\pi) + H(\mu) + H(\nu)
+	\end{equation}
+
+	donde $\mu\otimes\nu\in\probmeasure{\xspace\times\yspace}$ es la medida producto, cuya matriz de probabilidades es $ab^\top\in\matrixspace{n,m}{[0,1]}$.
+\end{prop}
+
+\begin{proof}
+	Sea $P\in\matrixspace{n,m}{[0,1]}$ la matriz de probabilidades asociada a $\pi$. Notando que $(ab^\top)_{ij} = a_i b_j$, se tiene lo siguiente:
+
+	\begin{align}
+		\KL{\pi}{\mu\otimes\nu} & = \sum_{i,j=1}^{n,m} P_{ij}\log\parent{\frac{P_{ij}}{a_ib_j}}                                                      \\
+		                        & = \sum_{i,j=1}^{n,m} P_{ij}\log(P_{ij}) - \sum_{i,j=1}^{n,m} P_{ij}\log(a_i) - \sum_{i,j=1}^{n,m} P_{ij} \log(b_j) \\
+		                        & = -H(P) - \sum_{i=1}^n \parent{\log(a_i)\sum_{j=1}^m P_{ij}} - \sum_{j=1}^m \parent{\log(b_j) \sum_{i=1}^n P_{ij}} \\
+		                        & = -H(P) + H(\mu) + H(\nu)
+	\end{align}
+
+	donde en la penúltima igualdad se usó que $\sum_{j=1}^m P_{ij} = a_i$ y $\sum_{i=1}^n P_{ij} = b_j$ ya que la medida $\pi$ tiene marginales $\mu$ y $\nu$.
+\end{proof}
+
+Notar que esta proposición anterior junto a la \autoref{prop:discrete_entropy_properties} permiten concluir directamente que la función $\pi\mapsto\KL{\pi}{\mu\otimes\nu}$ hereda las buenas propiedades de la función de entropía \eqref{eq:discrete_entropy}: es estrictamente convexa y, bajo la restricción $\pi\in\Pi(\mu,\nu)$, es minimizada por la medida producto $\mu\otimes\nu\in\probmeasure{\xspace\times\yspace}$. Con esto, es razonable considerar $\text{Regularizador}(P)=\KL{\pi}{\mu\otimes\nu}$ en \eqref{eq:eot_motivation_discrete}. Sin embargo, esto equivale a utilizar el regularizador $-\entropy{\pi}$:
+
+\begin{align}
+	\min_{P\in\Pi_d(\mu,\nu)} \dotproduct{C}{P}_F + \epsilon \cdot\KL{P}{\mu\otimes\nu}
+	 & = \min_{P\in\Pi_d(\mu,\nu)}  \dotproduct{C}{P}_F + \epsilon\cdot\parent{-H(\mu) + H(\nu) - H(P)}                             \\
+	 & = \epsilon\cdot H(\mu) + \epsilon\cdot H(\nu) + \parent{\min_{P\in\Pi_d(\mu,\nu)}  \dotproduct{C}{P}_F - \epsilon\cdot H(P)}
+\end{align}
+
+Por lo que el minimizador es el mismo en ambos casos y los respectivos valores óptimos solo difieren por una constante que depende de $\mu$, $\nu$ y $\epsilon$. Sin embargo, dado que el problema del puente de Schrödinger es fórmulado a partir de minimizar esta divergencia, se preferirá definir el problema de transporte óptimo entrópico utilizando este regularizador, aunque muchas veces se utilizará el problema equivalente \eqref{eq:eot_discrete_entropy} para mostrar o ilustrar propiedades del problema entrópico.
+
+\begin{defn}[Problema entrópico, versión discreta]
+	\label{defn:eot_discrete}
+	Dadas dos medidas discretas, $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$, con vectores de probabilidad $a\in\Sigma_n$ y $b\in\Sigma_m$ respectivamente. Para $\epsilon>0$ y un funcional de costo discreto $c:\xspace\times\yspace\to\R$, el problema de transporte óptimo entrópico entre $\mu$ y $\epsilon$ es:
+
+	\begin{equation}
+		\label{eq:eot_discrete_kl}
+		\min_{P\in\Pi_d(\mu,\nu)} \dotproduct{C}{P}_F + \epsilon \cdot\KL{P}{\mu\otimes\nu} =
+		\sum_{i=1}^n\sum_{j=1}^m C_{ij}P_{ij} + \epsilon \sum_{i=1}^n\sum_{j=1}^m P_{ij}\log\parent{\frac{P_{ij}}{a_ib_j}}
+	\end{equation}
+\end{defn}
+
+Observar que este problema es tiene una formulación similar al problema del puente de Schrödinger estático estudiado en la \autoref{eot_sbp/static_sbp}, donde el término $\dotproduct{C}{P}_F$ en \eqref{eq:eot_discrete_kl} puede ser absorbido por la divergencia $\KL{P}{\mu\otimes\nu}$ para obtener un caso particular del problema de Schrödinger estático cuando se considera una distribución de referencia específica conocida como \textit{kernel de Gibbs}.
+
+Para concluir la formulación discreta, se estudiará la relación del problema entrópico con el problema de Kantorovich original. En particular, se mostrará que la solución entrópica converge a la solución de máxima entropía del problema de Kantorovich cuando $\epsilon\to 0^+$. Por otro lado, se verá que la solución del problema entrópico tiende a la medida producto cuando $\epsilon\to\infty$, la cual puede ser interpretada como la distribución conjunta de dos variables aleatorias independientes con marginales $\mu$ y $\nu$.
+
+\begin{prop}
+	\label{prop:eot_convergence}
+	Sean $\mu\in\probmeasure{\xspace}$ y $\nu\in\probmeasure{\yspace}$ dos medidas de probabilidad discreta con vectores de medida $a\in\Sigma_n$ y $b\in\Sigma_m$ respectivamente. Para cada $\epsilon>0$, se define $P_\epsilon\in\matrixspace{n,m}{[0,1]}$ como la (única) solución del problema entrópico discreto \eqref{eq:eot_discrete_kl}. De esta forma, el mapa $\epsilon\mapsto P_\epsilon$ tiene los siguientes límites:
+
+	\begin{align}
+		\lim_{\epsilon\to 0^+} P_\epsilon    & = \argmax_{P\in\Pi_d(\mu,\nu)} \left\{H(P)\,:\, P\in  \argmin_{P\in\Pi_d(\mu,\nu)} \dotproduct{C}{P}_F   \right\} \\
+		\lim_{\epsilon\to \infty} P_\epsilon & = ab^\top
+	\end{align}
+
+	donde $ab^\top\in\Pi_d(\mu,\nu)$ es la matriz de probabilidad de la medida producto $\mu\otimes\nu\in\probmeasure{\xspace\times\yspace}$.
+\end{prop}
+
+\begin{proof}
+	Para el primer límite, es necesario probar que $\lim_{\epsilon\to 0^+} P_\epsilon$ es un plan de transporte factible, minimiza el problema de Kantorovich \eqref{eq:kantorovich_discrete} y que, de todas las soluciones del problema de Kantorovich, esta es la de mayor entropía.
+
+	Sea $(\epsilon_n)_{n\in\N}\subset\R_{++}$ una sucesión positiva con $\epsilon\to 0^+$. Como el conjunto de matrices $\Pi_d(\nu,\mu)$ es un conjunto acotado, la sucesión de soluciones $(P_{\epsilon_n})_{n\in\N}\subset\Pi_d(\nu,\mu)$ posee una subsucesión $(P_{\epsilon_{y_n}})_{n\in\N}\subset\Pi_d(\nu,\mu)$ convergente a una matriz $P_0\in\matrixspace{n,m}{[0,1]}$. Además, como $\Pi_d(\nu,\mu)$ es un conjunto cerrado, se tiene además que $P_0\in\Pi_d(\nu,\mu)$, por lo que la matriz de probabilidad límite, $P_0$, es efectivamente un plan de transporte.
+
+	Para ver que $P_0$ es solución del problema no regularizado \eqref{eq:kantorovich_discrete}, se mostrará que $\dotproduct{C}{P_0}$ toma el mismo valor que $\dotproduct{C}{P^*}$ para una solución $P^*$ del problema de Kantorovich. Para esto, si $P^*$ es solución del problema \eqref{eq:kantorovich_discrete}, entonces, para todo $n\in\N$:
+
+	\begin{equation}
+		\dotproduct{C}{P^*} \leq \dotproduct{C}{P_{y_n}}
+		\implies
+		0 \leq \dotproduct{C}{P_{y_n}}_F - \dotproduct{C}{P^*}_F
+	\end{equation}
+
+	Por otra parte, como $P_{y_n}$ es solución para el problema entrópico \eqref{eq:eot_discrete_entropy} (el cual es equivalente a \eqref{eq:eot_discrete_kl}), se tiene la desigualdad:
+
+	\begin{equation}
+		\dotproduct{C}{P_{y_n}}_F - y_n\cdot\entropy{P_{y_n}}
+		\leq \dotproduct{C}{P^*}_F - y_n\cdot\entropy{P^*}
+	\end{equation}
+
+	Luego, por ambas desigualdades:
+
+	\begin{equation}
+		\label{eq:eot_convergence_proof}
+		0 \leq \dotproduct{C}{P_{y_n}}_F - \dotproduct{C}{P^*}_F
+		\leq y_n\parent{\cdot\entropy{P_{y_n}} - \cdot\entropy{P^*}}
+	\end{equation}
+
+	Como $P\mapsto\entropy{P}$ es continua, $\entropy{P_{y_n}} \to \entropy{P_0}$. Del mismo modo, como $P\mapsto\dotproduct{C}{P}_F$ es lineal (en particular, continua), $\dotproduct{C}{P_{y_n}}_F\to\dotproduct{C}{P_0}_F$. Luego, tomando $y_n\to 0^+$ se concluye que $\dotproduct{C}{P_0}_F = \dotproduct{C}{P^*}_F$, por lo que $P_0$ es efectivamente una solución para el problema de Kantorovich.
+
+	Por último, la desigualdad \eqref{eq:eot_convergence_proof} muestra que $\entropy{P^*}\leq\entropy{P_{y_n}}$, para todo $n\in\N$, por lo que tomando límite y usando nuevamente que la función de entropía es continua, se concluye que $\entropy{P^*}\leq\entropy{P_0}$.
+
+	Para el segundo límite basta notar que el funcional de costo $\dotproduct{C}{P}_F$ es acotado cuando $P\in\Pi_d(\mu,\nu)$ ya es un funcional continuo y $P\in\Pi_d(\mu,\nu)$ es un conjunto cerrado y acotado. De este modo, si $\epsilon>0$ crece indefinidamente en \eqref{eq:eot_discrete_kl}, el máximo convergerá al mínimo de $\KL{P}{\mu\times\nu}$, el cual es el máximo de $\entropy{P}$ que, según la \autoref{prop:discrete_entropy_properties}, es la medida producto $\mu\otimes\nu$.
+\end{proof}
+
+Esta propiedad de aumento de entropía puede observarse en la \autoref{fig:eot_sbp/epsilon_discrete_solutions}.
+
+\insertimage{eot_sbp/epsilon_discrete_solutions}{0.8}{(izquierda) mapa de Monge entre las medidas $\mu$ y $\nu$. (derecha) evolución de la solución $P_\epsilon\in\Pi_d(\alpha,\beta)$ para distintos valores de $\epsilon$ en el problema entrópico con costo cuadrático para dos medidas discretas de probabilidad $\alpha$ y $\beta$. Solo se muestran los arcos para valores $(P_\epsilon)_{ij}$ mayores a un cierto umbral. Imagen obtenida desde \cite{peyré2020computational}.}
+
+\subsubsection{Problema entrópico continuo}
+
+El hecho de que la entropía y la divergencia de Kullback-Leibler sean regularizadores equivalentes, basta extender solo uno a su versión continua. Se elegirá la divergencia de Kullback-Leibler por su utilidad más adelante en el problema del puente de Schrödinger y para ser consistentes con la \autoref{defn:eot_discrete}:
+
+\pendiente{escribir asociandolo a f-divergencia, donde ahora se consider el caso no a.c. y la velocidad límite es infinito.}
+
+\begin{defn}[divergencia de Kullback-Leibler, caso continuo]
+	\label{defn:kl}
+	Dadas dos medidas de probabilidad $\mu,\nu\in\probmeasure{\R^d}$, se define la divergencia de Kullback entre $\mu$ y $\nu$ como
+
+	\begin{equation}
+		\KL{\mu}{\nu} :=
+		\begin{cases}
+			\int_{\R^d} \log\parent{\frac{d\mu}{d\nu}(x)} \d \mu(x) & \text{si } \mu\ll\nu       \\
+			\infty                                                  & \text{si } \mu \not\ll \nu
+		\end{cases}
+	\end{equation}
+
+	donde $\frac{d\mu}{d\nu}\in L^1(\R^d)$ es la derivada de Radon-Nikodym de $\mu$ con respecto a $\nu$ (ver \autoref{teo:radon_nikodym}) y la relación $\ll$ es la de continuidad absoluta entre medidas (ver \autoref{defn:absolute_continuity_measures}).
+\end{defn}
+
+Es importante comentar que en en la literatura esta función muchas veces es conocida como \textit{entropía relativa} en su formulación continua, pero en este trabajo se seguirá utilizando el nombre \textit{divergencia de Kullback-Leibler} para mantener la consistencia entre las formulaciones discretas y continuas.
+
+Notar que si las medidas $\mu,\nu\in\probmeasure{\R^d}$ tienen densidades $p_\mu,p_\nu\in L^1(\R^d)$ respectivamente, se recupera la definición estándar usada en la \autoref{defn:kl_ac}:
+
+\begin{equation}
+	\frac{d\mu}{d\nu} = \frac{d\mu}{dx} \cdot \frac{dx}{d\nu} = \frac{p_\mu}{p_\nu}
+	\implies
+	\KL{\mu}{\nu} = \int_{R^n} \log\parent{\frac{p_\mu(x)}{p_\nu(x)}}p_\mu(x) \d x
+\end{equation}
+
+donde $\d x$ es la medida de Lebesgue en $\R^d$. En estos casos, al igual que en el \autoref{dm}, se preferirá la notación $\KL{p_\mu}{p_\nu}$ para hacer explícita la dependencia de las densidades.
+
+Por otra parte, las propiedades de convexidad estricta y maximización de la definición continua de la divergencia de Kullback-Leibler se darán en la \autoref{eot_sbp/static_sbp/entropy_properties} al estudiar la formulación continua del problema de Schrödinger estático.
+
+Con esta extensión del regularizador al caso continuo, la formulación continua del problema \autoref{eq:eot_discrete_kl} es la siguiente:
+
+\begin{defn}[problema entrópico]
+	Sean $\mu\in\probmeasure{\R^n}$ y $\nu\in\probmeasure{\R^m}$ medidas de probabilidad. El problema de transporte óptimo entrópico es el siguiente:
+
+	\begin{equation}
+		\label{eq:continuous_eot}
+		\inf_{\pi\in\Pi(\mu,\nu)}  \int_{\R^n\times\R^m} c(x,y) \d\pi(x,y) + \epsilon\cdot \KL{\pi}{\mu\otimes\nu}
+	\end{equation}
+
+	Donde la divergencia $\KL{\pi}{\mu\otimes\nu}$ es la integral\footnote{Notar que si $\pi\in\Pi(\mu,\nu)$, entonces $\pi\ll\mu\otimes\nu$. \pendiente{agregar demostración.}}
+
+	\begin{equation}
+		\int_{\R^n\times\R^m} \log\parent{\frac{d\pi}{d(\mu\otimes\nu)}(x,y)} \d \pi(x,y)
+	\end{equation}
+\end{defn}
+
+Notar que es posible regularizar el problema de Kantorovich utilizando otra $f$-divergencia entre $\pi$ y $\mu\otimes\nu$, y no necesariamente la divergencia de Kullback-Leibler. Sin embargo, se suele preferir este regularizador ya que el problema dual de \eqref{eq:continuous_eot} se puede resolver eficientemente.
+
+Por otra parte, la medida de referencia $\mu\otimes\nu$ usada en la entropía relativa, tanto en el caso discreto como en el caso continuo, solo es importante para indicar el soporte de integración, ya que es posible utilizar otra medida producto como referencia:
+
+\begin{prop}
+	Sea $\pi\in\Pi(\mu,\nu)$ y $\mu'\in\probmeasure{\xspace}$, $\nu'\in\probmeasure{\yspace}$ medidas de probabilidad tales que $\supp{\mu'} = \supp{\mu}$ y $\supp{\nu'} = \supp{\nu}$ (i.e., $\mu\sim\mu'$ y $\nu\sim\nu'$), entonces:
+
+	\begin{equation}
+		\KL{\pi}{\mu\times\nu} = \KL{\pi}{\mu'\times\nu'} - \KL{\mu\times\nu}{\mu'\times\nu'}
+	\end{equation}
+
+	con $\KL{\mu\times\nu}{\mu'\times\nu'} = \KL{\mu}{\mu'} + \KL{\nu}{\nu'}$. En particular, el problema de optimización \eqref{eq:continuous_eot} no cambia su solución si se elige $\KL{\pi}{\mu'\times\nu'}$ en vez de $\KL{\pi}{\mu\times\nu}$.
+\end{prop}
+
+\begin{proof}
+	Por simplicidad, se probará la proposición en el caso discreto. Para esto, sean $\mu,\mu'\in\probmeasure{\xspace}$ dos medidas con el mismo soporte $\xspace=\{x_i\}_{i=1}^n$ y vectores de probabilidad $a,a'\in\Sigma_n$ respectivamente; y $\nu,\nu'\in\probmeasure{\yspace}$ otras dos medidas con el mismo soporte $\yspace=\{y_j\}_{j=1}^m$ y vectores de probabilidad $b,b'\in\Sigma_m$ respectivamente, entonces, para una medida $\pi\in\probmeasure{\xspace\times\yspace}$ con matriz de probabilidad $P\in\Pi_d(\mu,\nu)$ se tiene que:
+
+	\begin{align}
+		\KL{\pi}{\mu\otimes\nu} & = \sum_{i=1}^n \sum_{j=1}^m \log\parent{\frac{P_{ij}}{a_i b_j}}\, P_{ij}                                                                                                                                \\
+		                        & =\sum_{i=1}^n \sum_{j=1}^m \left[\log\parent{\frac{P_{ij}}{a'_i b'_j}} + \log\parent{\frac{a'_i b'_j}{a_i b_j}}\right]\, P_{ij}                                                                         \\
+		                        & = \sum_{i=1}^n \sum_{j=1}^m \log\parent{\frac{P_{ij}}{a'_i b'_j}} \, P_{ij} + \sum_{i=1}^n \sum_{j=1}^m \left[\log\parent{\frac{a'_i}{a_i}} \, P_{ij} + \log\parent{\frac{b'_j}{b_j}} \, P_{ij} \right] \\
+		                        & = \KL{\pi}{\mu'\otimes\nu'} + \sum_{i=1}^n a_i \log\parent{\frac{a'_i}{a_i}} + \sum_{j=1}^m a_j \log\parent{\frac{b'_j}{b_j}}                                                                           \\
+		                        & = \KL{\pi}{\mu'\otimes\nu'} - \KL{\mu}{\mu'} - \KL{\nu}{\nu'}
+	\end{align}
+
+	donde en la penúltima igualdad se usó que $sum_{j=1}^m P_{ij} = a_i$ y $sum_{i=1}^n P_{ij} = b_j$. Además, las dos divergencias individuales se pueden unir en una única divergencia producto:
+
+	\begin{align}
+		\KL{\mu}{\mu'} + \KL{\nu}{\nu'} & = \sum_{i=1}^n \sum_{j=1}^m a_i b_j \left[\log\parent{\frac{a_i}{a'_i}} + \log\parent{\frac{b_j}{b'_j}}\right] \\
+		                                & = \sum_{i=1}^n \sum_{j=1}^m a_i b_j \log\parent{\frac{a_i b_j}{a'_i b_j}}                                      \\
+		                                & = \KL{\mu\times\nu}{\mu'\times\nu'}
+	\end{align}
+
+	donde en la primera igualdad se usó que $\sum_{i=1}^n a_i = \sum_{j=1}^m b_j = 1$ ya que $\mu$ y $\nu$ son medidas de probabilidad.
+\end{proof}
+
+Esta propiedad de tener planes de transporte difusos tiene la desventaja de que no permite recuperar un mapa de transporte $T:\xspace\to\yspace$ como sí ocurre en varios casos de interés (ver \autoref{prop:matching_existence} y \autoref{teo:brenier}). Sin embargo, como es de esperar, la convergencia obtenida en la \autoref{prop:eot_convergence} se puede extender a la formulación continua del problema entrópico\footnote{Sin embargo, la noción de convergencia precisa para el caso continuo es la de $\Gamma$-convergencia (ver \cite{léonard2013survey}).}. En la \autoref{fig:eot_sbp/epsilon_continuous_solutions} se observa esta propiedad para el problema entrópico continuo en $\R$. Para $\epsilon\gg0$ la solución óptima es muy similar a la medida producto entre $\mu$ y $\nu$, mientras que para $\epsilon\approx 0$, la solución se asemeja al plan óptimo de Kantorovich, el cual coincide con el mapa de Monge en este caso.
+
+\insertimage{eot_sbp/epsilon_continuous_solutions}{0.8}{Evolución de la solución $\pi^*(\epsilon)\in\Pi(\mu,\nu)$ para distintos valores de $\epsilon>0$ en el problema entrópico con costo cuadrático entre dos medidas de probabilidad continuas $\mu$ y $\nu$. Imagen obtenida desde \cite{peyré2020computational}.}
+
+\subsection{Problema entrópico dual}
+\label{eot_sbp/regularized/eot_dual}
+
+\subsubsection{Problema dual discreto}
+
+Como se mencionó en la sub-sección anterior, usar un regularizador en la función objetivo del problema entrópico \eqref{eq:eot_motivation_discrete} transforma el problema en uno estrictamente convexo, garantizando la unicidad de la solución. Sin embargo, el problema sigue siendo costoso de resolver ya que tiene la misma cantidad de incógnitas que el problema de Kantorovich original \eqref{eq:kantorovich_discrete}.
+
+El problema entrópico discreto \eqref{eq:eot_discrete_entropy} escrito con todas sus restricciones de forma explícita es:
+
+\begin{align}
+	\min_{P\in\matrixspace{n,m}{[0,1]}} \quad & \sum_{i,j=1}^{n,m} P_{ij}C_{ij} + \epsilon\sum_{i,j=1}^{n,m} P_{ij}\log(P_{ij}) \\
+	\text{s.a:} \quad                         & \sum_{j=1}^m P_{ij} = a_i,\quad \forall i\in\{1,\ldots,n\},                     \\
+	                                          & \sum_{i=1}^n P_{ij} = b_j,\quad \forall j\in\{1,\ldots,m\}.
+\end{align}
+
+Notar que este problema ya no es de programación lineal debido a los términos $P_{ij}\log(P_{ij})$ dentro de la función objetivo. Por lo tanto, el problema dual debe ser determinado utilizando dualidad lagrangiana. Se tiene el siguiente resultado:
+
+\begin{prop}[problema entrópico dual, caso discreto]
+	El problema dual del problema entrópico discreto \eqref{eq:eot_discrete_entropy} es el problema de optimización irrestricto
+
+	\begin{equation}
+		\label{eq:eot_dual_discrete}
+		\sup_{(\phi,\psi)\in\R^n\times\R^m} \dotproduct{\phi}{a} + \dotproduct{\psi}{b} -\epsilon \sum_{i,j=1}^{n,m} \exp\parent{\frac{\phi_i + \psi_j-C_{ij} - \epsilon}{\epsilon}}
+	\end{equation}
+
+	Además, hay dualidad fuerte:
+
+	\begin{equation}
+		\sup_{(\phi,\psi)\in\R^n\times\R^m} \dotproduct{\phi}{a} + \dotproduct{\psi}{b} -\epsilon \sum_{i,j=1}^{n,m} \exp\parent{\frac{\phi_i + \psi_j-C_{ij} - \epsilon}{\epsilon}}
+		=
+		\inf_{P\in\Pi_d(\mu,\nu)} \dotproduct{C}{P}_F - \epsilon\cdot\entropy{P}
+	\end{equation}
+
+	Con esto, la (única) solución del problema primal \eqref{eq:eot_discrete_entropy} es
+
+	\begin{equation}
+		P_{ij}^* = \exp\parent{\frac{\phi_i^* + \psi_j^* - C_{ij} - \epsilon}{\epsilon}}
+	\end{equation}
+
+	donde $(\phi^*,\psi^*)\in\R^n\times\R^m$ son multiplicadores de Lagrange óptimos para el problema \eqref{eq:eot_dual_continuous}.
+\end{prop}
+
+\begin{proof}
+	Asociando un multiplicador de Lagrange $\alpha\in\R^n$ a las restricciones asociadas a la marginal $\mu$ y un multiplicador $\beta\in\R^m$ a las restricciones asociadas a la marginal $\nu$, el lagrangiano del problema entrópico discreto, $L:\matrixspace{n,m}{[0,1]}\times\R^n\times\R^m\to\R$, es:
+
+	\begin{equation}
+		L(P,\alpha,\beta) = \sum_{i,j=1}^{n,m} P_{ij}C_{ij} + \epsilon\sum_{i,j=1}^{n,m} P_{ij}\log(P_{ij}) + \sum_{i=1}^n \phi_i \parent{a_i - \sum_{j=1}^m P_{ij}} + \sum_{j=1}^m \psi_j \parent{b_j - \sum_{i=1}^n P_{ij}}
+	\end{equation}
+
+	y por lo tanto, para obtener la función dual $\theta:\R^n\times\R^m\to\R$ definida por
+
+	\begin{equation}
+		\label{eq:eot_discrete_dual_cpo}
+		\theta(\alpha,\beta)= \min_{P\in\matrixspace{n,m}{[0,1]}} L(P,\alpha,\beta)
+	\end{equation}
+
+	basta aplicar la condición de primer orden sobre $P\mapsto L(P,\alpha,\beta)$. De este modo, considerando a $\alpha$ y $\beta$ fijos, la solución óptima $P^*$ para el problema \eqref{eq:eot_discrete_dual_cpo} verifica:
+
+	\begin{align}
+		\frac{\partial L}{\partial P_{ij}}(P^*,\alpha,\beta) = C_{ij} + \epsilon(\log(P_{ij}^*)+1) - \phi_i - \psi_j = 0 \implies P_{ij}^* = \exp\parent{\frac{\phi_i + \psi_j-C_{ij} - \epsilon}{\epsilon}}
+	\end{align}
+
+	Luego, la función dual es:
+
+	\begin{align}
+		\theta(\alpha,\beta) & = L(P^*,\alpha,\beta)                                                                                                                                 \\
+		                     & = \sum_{i,j=1}^{n,m} P_{ij}^* \parent{ C_{ij} + \epsilon\cdot\log(P_{ij}^*)- \phi_i-\psi_j } + \sum_{i=1}^n \phi_i a_i + \sum_{j=1}^m \psi_j b_j      \\
+		                     & = \sum_{i,j=1}^{n,m} P_{ij}^* \parent{ C_{ij} + [\phi_i+\psi_j-C_{ij}-\epsilon] - \phi_i-\psi_j } + \sum_{i=1}^n \phi_i a_i + \sum_{j=1}^m \psi_j b_j \\
+		                     & = -\epsilon \sum_{i,j=1}^{n,m} \exp\parent{\frac{\phi_i + \psi_j-C_{ij} - \epsilon}{\epsilon}} + \sum_{i=1}^n \phi_i a_i + \sum_{j=1}^m \psi_j b_j
+	\end{align}
+
+	Concluyendo lo que se quería demostrar.
+\end{proof}
+
+Es importante notar que este problema no posee solución única. En efecto, si $(\phi^*,\psi^*)\in\R^n\times\R^m$ es solución, entonces $(\tilde{\phi},\tilde{\psi}) = (\phi + \eta\1_n, \phi - \eta\1_m)$ también es solución. En efecto, la exponencial en \eqref{eq:eot_dual_discrete} no cambia, mientras que:
+
+\begin{equation}
+	\dotproduct{\phi + \eta\1_n}{a} + \dotproduct{\psi - \eta\1_m}{b}
+	= \dotproduct{\phi}{a} + \eta\dotproduct{\1_n}{a} + \dotproduct{\psi}{b} - \eta\dotproduct{\1_m}{b}
+	= \dotproduct{\phi}{a} + \dotproduct{\psi}{b}
+\end{equation}
+
+Por lo que se obtiene el mismo valor objetivo al usar $(\phi^*,\psi^*)$ o $(\tilde{\phi},\tilde{\psi})$. Sin embargo, se puede demostrar que todas las soluciones son de este tipo, por lo que la solución al problema \eqref{eq:eot_dual_discrete} es única salvo constantes aditivas.
+
+Por otra parte, al comparar este problema dual con el problema dual del problema de Kantorovich no regularizado \eqref{eq:kantorovich_dual_discrete} se observa que la regularización entrópica relaja la restricción $\phi_i+\psi_j \leq C_{ij}$ para los potenciales de Kantorovich $(\phi,\psi)$ en \eqref{eq:kantorovich_dual_discrete} agregándola a la función objetivo como un penalizador exponencial en el problema \eqref{eq:eot_dual_discrete}. Esta relajación permite pasar de trabajar un problema dual con restricciónes a uno irrestricto.
+
+Una observación importante es que en la literatura asociada al transporte óptimo, es usual definir la función de entropía discreta \eqref{eq:discrete_entropy} con un término adicional, el cual solo simplifica las ecuaciones pero no cambia en nada el análisis:
+
+\begin{defn}[entropía discreta, definición alternativa]
+	Para una medida discreta $\mu\in\probmeasure{\xspace}$ con vector de probabilidad $a\in\Sigma^n$, se define la entropía discreta de $\mu$ como:
+
+	\begin{equation}
+		\entropy{\mu} := - \sum_{i=1}^n a_i(\log(a_i)-1)
+	\end{equation}
+\end{defn}
+
+Notar que $-\sum_{i=1}^n -a_i = 1$, por lo que $\entropy{\mu} = \entropy{\mu} + 1$. En consecuencia, el plan de transporte óptimo en ambos casos son es el mismo.
+
+\pendiente{colocar cómo queda el nuevo dual.}
+
+A pesar de esta leve mejora en la formulación, en este trabajo se preferirá la formulación dada en \eqref{eq:discrete_entropy} para mantener la consistencia con la definición usada en el aprendizaje de máquinas y en el \autoref{dm}.
+
+Por último, en la \autoref{eot_sbp/static_sbp/sinkhorn}, se mostrará un algoritmo para resolver este problema de manera eficiente, permitiendo computar una buena aproximación de la distancia de Wasserstein para problemas de transporte óptimo a gran escala.
+
+\subsubsection{Problema dual continuo}
+
+\begin{prop}[problema entrópico dual, caso continuo]
+	El problema dual del problema entrópico continuo \eqref{eq:continuous_eot} es el problema de optimización irrestricto
+
+	\begin{equation}
+		\label{eq:eot_dual_continuous}
+		\sup_{(\phi,\psi)\in \continuousb{\R^n}\times \continuousb{\R^m}}
+		\int_{\R^d} \phi(x) \d\mu(x) + \int_{\R^d} \psi(y) \d\nu(y)
+		- \epsilon \int_{\xspace\times\yspace} \exp\parent{\frac{\phi\oplus\psi - c - \epsilon}{\epsilon}} \d(\mu\otimes\nu)
+	\end{equation}
+
+	Además, hay dualidad fuerte:
+
+	\begin{align}
+		 & \sup_{(\phi,\psi)\in \continuousb{\R^n}\times \continuousb{\R^m}}
+		\int_{\R^d} \phi \d\mu + \int_{\R^d} \psi \d\nu
+		- \epsilon \int_{\xspace\times\yspace} \exp\parent{\frac{\phi\oplus\psi - c - \epsilon}{\epsilon}} \d(\mu\otimes\nu) \\
+		 & =\inf_{\pi\in\Pi(\mu,\nu)}  \int_{\R^n\times\R^m} c \d\pi + \epsilon\cdot \KL{\pi}{\mu\otimes\nu}
+	\end{align}
+
+	Con esto, la (única) solución del problema primal \eqref{eq:continuous_eot} es
+
+	\begin{equation}
+		\d\pi = \exp\parent{\frac{\phi^* \oplus \psi^* - c - \epsilon}{\epsilon}} \d\mu\d\nu
+	\end{equation}
+
+	donde $(\phi^*,\psi^*)\in \continuousb{\R^n}\times \continuousb{\R^m}$ son multiplicadores de Lagrange óptimos para el problema \eqref{eq:eot_dual_continuous}.
+\end{prop}
+
+Notar que, al igual que el problema dual entrópico discreto \eqref{eq:eot_dual_discrete}, las soluciones son únicas salvo constantes aditivas\footnote{Sin embargo, es posible modificar los valores que toman las funciones $\phi^*$ y $\psi^*$ fuera del soporte de $\mu\otimes\nu$, por lo que la unicidad es en el sentido de las medidas $\mu$ y $\nu$.}. Además, esta formulación tamibén se puede interpretar como una relajación de la restricción $\phi\oplus\psi\leq c$ del problema de Kantorovich dual \eqref{eq:kantorovich_dual_continuous}.
+
+Por otra parte, el hecho de no tener restricciones para este problema dual permite escribir el problema \eqref{eq:eot_dual_continuous} como la maximización de una esperanza mediante el problema
+
+\begin{equation}
+	\sup_{(\phi,\psi)\in \continuousb{\R^n}\times \continuousb{\R^m}}
+	\E{\mu\otimes\nu}{\phi\oplus\psi - \epsilon\cdot \exp\parent{\frac{\phi\oplus\psi - c - \epsilon}{\epsilon}}}
+\end{equation}
+
+Por lo que es posible utilizar cualquier algoritmo de maximización de esperanzas para resolver el problema. Por otra parte, si bien el problema dual \eqref{eq:kantorovich_dual_continuous} también se puede escribir de esta forma, la restricción $\phi\oplus\psi\leq c$ se suele incluir en la esperanza mediante otro problema de optimización, por lo que en la práctica no es posible maximizar la nueva esperanza de forma eficiente.
+
+\section{Problema de Schrödinger estático}
+\label{eot_sbp/static_sbp}
+
+Como se vió en la sección anterior, la regularización entrópica soluciona varias de las limitaciones presentes en el problema de Kantorovich, como suavizar el plan de transporte óptimo y garantizar su unicidad. En esta sección se verá que el problema de transporte entrópico es en realidad un caso particular del problema de Schrödinger estático cuando se considera un candidato a solución natural para resolver el problema de Kantorovich no regularizado.
+
+Para el problema de Kantorovich \eqref{eq:kantorovich_discrete}, un plan de transporte razonable entre $\mu$ y $\nu$ es aquel que evita transportar masa entre pares de puntos $(x,y)\in\xspace\times\yspace$ cuyo costo de transporte sea elevado. Con esta idea, resulta natural proponer como plan de transporte al kernel de Gibbs, el cual se define de la siguiente forma:
+
+\begin{defn}[Kernel de Gibbs]
+	Dados dos conjuntos finitos	$\xspace$ e $\yspace$, una matriz de costo $C\in\matrixspace{n,m}{\R}$ y un parámetro de temperatura $T>0$, se define el kernel de Gibbs $\gibbs\in\mathcal{M}_+(\xspace\times\yspace)$ como la medida (no necesariamente de probabilidad) cuya matriz de masa es
+
+	\begin{equation}
+		\label{eq:gibbs_discrete}
+		\gibbs_{ij} := \exp\parent{-\frac{C_{ij}}{T}}
+	\end{equation}
+
+	donde se ha abusado de notación para representar a la medida y la matriz de probabilidades con el mismo símbolo $\gibbs$.
+\end{defn}
+
+Es importante destacar la estrecha similitud entre el kernel de Gibbs y la distribución de Boltzmann definida en \eqref{eq:boltzmann}\footnote{Recordar que esta distribución permitió interpretar la maximización de la ELBO de un modelo de difusión \eqref{eq:elbo_ddpm} como la minimización de la energía libre de Helmholtz de un sistema termodinámico.}. Sin embargo, aunque ambas son medidas con la misma función de masa (salvo constante multiplicativa de normalización), el kernel de Gibbs es una medida en un espacio producto mientras que la distribución de Boltzmann es una medida de probabilidad en un espacio simple. Esto es debido a que la distribución de Boltzmann está pensada como una distribución sobre un espacio de estados mientras que el kernel de Gibbs está pensado como un kernel de transición entre dos estados dentro de un sistema dinámico (i.e., un sistema que evoluciona).
+
+Al igual que para la distribución de Boltzmann, la función exponencial en \eqref{eq:gibbs_discrete} es usada para obtener una medida positiva mientras que el parámetro de temperatura $T$ cumple un rol similar al parámetro de temperatura al guiar los modelos de difusión en la \autoref{dm/discrete_dm/improvements}. Con esto, el kernel de Gibbs puede interpretarse como un plan de transporte natural pero que no necesariamente respeta las distribuciones marginales $\mu$ y $\nu$ y, más aún, no es necesariamente una medida de probabilidad. Por lo tanto, para obtener un plan de transporte factible a partir del kernel de Gibbs es necesario proyectar (en algún sentido) la medida positiva $\gibbs\in\mathcal{M}_+(\xspace\times\yspace)$ sobre el conjunto $\Pi_d(\mu,\nu)\subset\probmeasure{\xspace\times\yspace}\subset\mathcal{M}_+(\xspace\times\yspace)$.
+
+La noción natural de distancia es la KL ya que se está usando cosas de entropía.
+
+...
+
+Notar que al reformular el problema entrópico como un problema de Schrödinger estático se vuelve innecesario almacenar la matriz de costo $C\in\matrixspace{n,m}{\R}$ ya que solo hace falta poder accerder a ella mediante $\gibbs$.
+
+\subsection{Propiedades de la entropía relativa}
+\label{eot_sbp/static_sbp/entropy_properties}
+
+\subsubsection{Propiedades básicas}
+
+pendiente{las f-div son conjuntas en ambas variables. además, si f es estrictamente convexa en 1, entonces la divergencia es no negativa y 0 ssi mu = nu.}
+
+\begin{prop}[convexidad y positividad de la entropía relativa]
+	\label{prop:kl_convexity}
+	Dada una medida de probabilidad $R\in\probmeasure{\Omega}$, el operador $Q\in\probmeasure{\Omega} \mapsto \KL{Q}{R}$ es convexo y no negativo. Más aún, es estrictamente convexo en el subconjunto donde $\KL{Q}{R}$ es finito y es nulo si y solo si $Q=R$.
+
+\end{prop}
+
+% \begin{proof}
+
+% 	Notando que $dQ = \frac{dQ}{dR} \d R$ para $Q\ll R$, la entropía relativa se puede escribir como
+
+% 	\begin{equation}
+% 		\KL{Q}{R} = \int_\Omega \log\parent{\frac{dQ}{dR}(z)}\frac{dQ}{dR}(z) \d R(z) = \E{z\sim R}{h\parent{\frac{dQ}{dR}(z)}}
+% 	\end{equation}
+
+% 	donde la función $h:[0,\infty]\to [-e^{-1},\infty]$ definida como $h(z)=z\log z$ es convexa y estrictamente convexa en el subconjunto donde es finita\footnote{Aquí se considera la convención $0\cdot\infty := 0$.}. Por lo tanto, como la esperanza es un operador lineal, se tiene la convexidad de $\KL{\cdot}{R}$.
+
+% 	Para la positividad basta utilizar la desigualdad de Jensen:
+
+% 	\begin{equation}
+% 		\KL{Q}{R} = \E{z\sim R}{h\parent{\frac{dQ}{dR}(z)}} \geq h\parent{\E{z\sim R}{\frac{dQ}{dR}(z)}} = h\parent{\E{z\sim Q}{1}} = h(1) = 0
+% 	\end{equation}
+
+% 	Para la reflexividad, notar que:
+
+% 	\begin{equation}
+% 		\KL{Q}{R} = 0 \iff \frac{dQ}{dR} = 1\, \d Q-\text{c.s.} \iff Q=R
+% 	\end{equation}
+
+% \end{proof}
+
+\pendiente{decir que si bien la divergencia TV es métrica, la KL no lo es y tampoco metriza la conv débil.}
+
+\pendiente{decir que la de jensen-shannon, sí metriza la topología fuerte (tv).}
+
+Por otra parte, si bien la entropía relativa no es una distancia en $\probmeasure{\Omega}$ (es directo ver que no es simétrica), se puede inducir una topología en $\probmeasure{\Omega}$ a partir de la noción de convergencia en entropía relativa, donde una secuencia de medidas de probabilidad $(Q_k)_{k\in\N}\subset \probmeasure{\Omega}$ se dirá que converge en entropía relativa a $R\in\probmeasure{\Omega}$ si
+
+\begin{equation}
+	\lim_{k\to\infty} \KL{Q_k}{R} = 0
+\end{equation}
+
+La siguiente desigualdad afirma que la convergencia en entropía relativa es más fuerte que la convergencia en variación total (ver \autoref{defn:tv}):
+
+\begin{teo}[desigualdad de Pinsker]
+	Dadas dos medidas de probabilidad $P,Q\in\probmeasure{\Omega}$, se tiene que:
+
+	\begin{equation}
+		\TV{Q-R} \leq \sqrt{2\KL{Q}{R}}
+	\end{equation}
+
+	En particular, si una sucesión $(Q_k)_{k\in\N}\subset \probmeasure{\Omega}$ converge en entropía relativa a $R\in\probmeasure{\Omega}$, también lo hará en variación total.
+\end{teo}
+
+Por otra parte, la entropía relativa tiene la siguiente propiedad de continuidad, la cual será importante para su minimización:
+
+\begin{teo}
+	\label{teo:kl_semicontinuity}
+	El operador $(Q,R)\in\probmeasure{\Omega}\times\probmeasure{\Omega} \mapsto \KL{Q}{R}$ es semicontinuo inferior con respecto a la convergencia en variación total. Si además $\Omega$ es un espacio polaco, también se tendrá semicontinuidad inferior con respecto a la convergencia débil de medidas.
+\end{teo}
+
+\subsubsection{Minimización de la entropía relativa}
+
+Las propiedades de convexidad estricta en la \autoref{prop:kl_convexity} y de semicontinuidad inferior en el \autoref{teo:kl_semicontinuity} permiten obtener un resultado de existencia y unicidad para el problema de minimización de la entropía relativa sobre un conjunto factible $\mathcal{Q}\subset \probmeasure{\Omega}$. El siguiente teorema será importante al estudiar el problema estático de Schrödinger en la \autoref{eot_sbp/static_sbp}, donde $\Omega=\xspace\times\yspace$ y $\mathcal{Q}$ será el conjunto de couplings $\Pi(\mu,\nu)$ (ver \autoref{eq:continuous_coupling}):
+
+\begin{teo}
+	\label{teo:kl_minimization}
+	Sea $R\in\probmeasure{\Omega}$ una medida de probabilidad fija y $\mathcal{Q}\subset \probmeasure{\Omega}$ un conjunto convexo, no vacío y cerrado en variación total. Si existe una medida $Q\in\mathcal{Q}$ tal que $\KL{Q}{R}<\infty$, entonces existe un único minimizador $\bar Q\in\mathcal{Q}$ para el problema de optimización
+
+	\begin{equation}
+		\inf_{Q\in\mathcal{Q}} \KL{Q}{R}
+	\end{equation}
+\end{teo}
+
+Además, la convexidad estricta del problema garantiza que si $\KL{Q}{R}$ está cerca de $\KL{\bar Q}{R}$, entonces $Q$ está cerca de $\bar Q$:
+
+\begin{prop}
+	Bajo las hipótesis del \autoref{teo:kl_minimization}, para todo $Q\in\mathcal{Q}$ con $\KL{Q}{R}<\infty$ se tiene que
+
+	\begin{equation}
+		\KL{Q}{\bar Q} \leq \KL{Q}{R} - \KL{\bar Q}{R}
+	\end{equation}
+\end{prop}
+
+En varios casos de interés, el conjunto factible $\mathcal{Q}$ puede ser caracterizado mediante una cantidad numerable de restricciones lineales. De esta forma, se pueden considerar los conjuntos $\mathcal{Q}_k$ asociados a las primeras $k$ restricciones de $\mathcal{Q}$ y obtener $\mathcal{Q}$ como una intersección de dichos conjuntos. El siguiente resultado muestra que es posible obtener el minimizador $\bar Q\in\mathcal{Q}$ como el límite de minimizadores asociados a los conjuntos factibles $\mathcal{Q}_k$:
+
+\begin{prop}
+	Se consideran las hipótesis del \autoref{teo:kl_minimization}. Para $k\in\N$, sean $\mathcal{Q}_k\subset\probmeasure{\Omega}$ conjuntos convexos y cerrados en variación total tales que $\mathcal{Q}=\cap_{k\in\N} \mathcal{Q}_k$. Considerando $\bar{Q}_k$ como el minimizador\footnote{Estos minimizadores existen y son únicos gracias al \autoref{teo:kl_minimization} aplicado sobre $\mathcal{Q}_k$.} de $\KL{\cdot}{R}$ sobre $\mathcal{Q}_k$ para $k\in\N$, entonces $\bar Q_k \to \bar Q$ en variación total y $\KL{\bar Q_k}{R}\to\KL{\bar Q}{R}$.
+\end{prop}
+
+\subsection{Problema dual}
+\label{eot_sbp/static_sbp/dual}
+
+\subsection{Algoritmo de Sinkhorn}
+\label{eot_sbp/static_sbp/sinkhorn}
+
+\subsubsection{Matrix scaling problem}
+
+\subsubsection{Convergencia}
+
+\section{Formulación dinámica}
+\label{eot_sbp/dynamic}
+
+\subsection{Ecuaciones de Schrödinger}
+\label{eot_sbp/dynamic/schrodinger_equations}
+
+\subsection{Interpretación como problema de control óptimo estocástico}
+\label{eot_sbp/dynamic/optimal_control}
+
+\subsubsection{Criterios de optimalidad}
